@@ -1,6 +1,6 @@
 # SpeechPrefix
 
-An offline research prototype for two separate tasks: forecasting likely content before a speech, and updating next-word predictions as a transcript prefix arrives.
+An offline research prototype for three separate tasks: forecasting before a speech, continuing an observed transcript, and predicting a target speaker's response as a time-coded event unfolds.
 
 This is an experiment, not a promise to reproduce a future speech. Models return candidate probabilities estimated from training data; treat them as uncalibrated until evaluation says otherwise. No live audio or transcript feed is included.
 
@@ -31,6 +31,7 @@ python3 -m speechprefix evaluate --input data/speeches.jsonl
 python3 -m speechprefix forecast --input data/speeches.jsonl
 python3 -m speechprefix audit --input data/speeches.jsonl
 .venv/bin/python -m speechprefix segment --input data/speeches.jsonl
+python3 -m speechprefix turn-import --transcript data/page.txt --metadata data/event.json --output data/events.jsonl
 .venv/bin/python -m speechprefix context-fetch --as-of 2026-09-30 --query "artificial intelligence"
 ```
 
@@ -45,16 +46,17 @@ In stream mode, submit each new chunk on its own line. A blank line exits. For S
 
 The older `pretrained-hybrid` command is only a candidate-fusion comparison baseline; it may use external checkpoints. SpeechPlan-H's architecture and known limits are described in `docs/speechplan-hybrid.md`.
 
-`segment` splits transcript paragraphs, distinguishes explicit questions from reporter floor prompts, and links likely president responses in transcript order. Those links are heuristic; unmarked text stays unattributed. SpeechPlan-H trains separate transcript and question channels and reports Q&A results apart from ordinary continuation. Add `--question` at generation time after training a new checkpoint. `context-fetch` calls the public Federal Register API without an API key and stores dated titles/abstracts locally; it excludes documents published on the prediction date because transcript event times are unavailable. External evidence is accepted only when the checkpoint was trained with dated, question-linked evidence pairs; see the JSONL schema in `CONTEXT.md`. The current Federal Register sample is unpaired, so it is not yet model input. Current counts and limitations are in `docs/data-audit.md`.
+`segment` is the legacy paragraph-based pipeline; its question-response links are heuristic and are not the target representation for live exchanges. `turn-import` parses a time-coded transcript page and event metadata, preserving speaker turns, timestamps, page annotations, and source attribution. It does not guess which question a response answers; response links and idea labels must be reviewed and supplied in the metadata JSON. See `data/README.md` for the event format. The current SpeechPlan-H trainer has not yet been adapted to these event examples, so do not interpret the historical paragraph-based Q&A results as live-response performance. `context-fetch` calls the public Federal Register API without an API key and stores dated titles/abstracts locally; it excludes documents published on the prediction date because transcript event times are unavailable. The current Federal Register sample is unpaired and is not model input. Current legacy-corpus counts and limitations are in `docs/data-audit.md`.
 
-## Two tasks, two evaluations
+## Three tasks, separate evaluations
 
-- **Continuation:** Given an observed prefix from a speech, predict its next word(s). Evaluation replays held-out speeches sequentially and scores each prediction before revealing the next word.
-- **Pre-speech forecast:** Given only historical speeches, rank recurring phrases likely to appear in the next speech. The initial baseline uses dated JSONL metadata and walk-forward evaluation. This is a phrase-recurrence baseline, not a semantic topic model; topic labels and event-aware inputs remain future work.
+- **Pre-speech forecast:** Given only historical speeches, rank recurring phrases likely to appear in the next speech. The initial baseline uses dated JSONL metadata and walk-forward evaluation. It is a phrase-recurrence baseline, not a semantic topic model.
+- **Continuation:** Given an observed transcript prefix, predict its next word(s). Replay held-out speeches sequentially and score each prediction before revealing the next word.
+- **Question-anchored response:** Given the observed turns and a reviewer-selected question/prompt trigger in a time-coded event, predict the target speaker's likely ideas and exact words. Triggers can include follow-ups and the target speaker's own clarifying questions. Score ideas separately from wording and track whether another speaker responds or the target does not.
 
-Never mix these scores. A continuation model sees the opening of the target speech; a pre-speech model must not.
+Never mix these scores. A continuation model sees the target transcript prefix; a pre-speech model must not. Question-response evaluation must reveal only turns observable by its prediction time.
 
-SpeechPlan-H is a from-scratch prototype with a coarse-to-fine residual VQ planner whose predicted codes become cross-attention memory for an autoregressive Transformer decoder. It is a small word-level language model, not a pretrained large language model. Its training code performs a chronological, whole-date split, but the current corpus contains mixed presidential records that have not been manually verified as speeches. Treat all resulting metrics as plumbing checks until a clean speech set is assembled. Exact wording and semantic segment quality need separate evaluations.
+SpeechPlan-H is a from-scratch prototype with a coarse-to-fine residual VQ planner whose predicted codes become cross-attention memory for an autoregressive Transformer decoder. It is a small word-level language model, not a pretrained large language model. Its training code performs a chronological, whole-date split, but the current corpus contains mixed presidential records that have not been manually verified as speeches. Treat all resulting metrics as plumbing checks until a clean speech set is assembled. Exact wording and semantic idea predictions need separate evaluations. The new time-coded event parser and metric functions are not yet connected to SpeechPlan-H training.
 
 ## Data and evaluation cautions
 

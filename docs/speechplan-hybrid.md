@@ -2,23 +2,39 @@
 
 SpeechPlan-H is a from-scratch, word-level model. It does not load GPT-2 or Stanford NCM weights. It uses the installed Transformers GPT-2 implementation only as a randomly initialized autoregressive decoder.
 
-## Inputs and architecture
+## Model inputs
 
-The model keeps three inputs separate:
+The current model has separate channels for:
 
-- **Transcript prefix:** observed transcript text before the target. A context encoder summarizes it; the decoder also reads it through causal self-attention.
-- **Question:** an explicit reporter question, encoded in its own channel.
-- **Evidence:** dated, source-attributed text retrieved as of the prediction time. This channel is optional and is accepted only for checkpoints trained with question-linked evidence pairs.
+- **Transcript context:** observed text before or around the target response.
+- **Question:** explicit question text, supplied separately from transcript context.
+- **Dated evidence:** optional source-attributed text published before the prediction point. The current Federal Register sample is unpaired and is not model input.
 
-The NCM-like planner combines summaries from those channels and predicts coarse-to-fine residual VQ codes for the next segment. The GPT-style decoder cross-attends to question/evidence memory and the predicted plan codes. A training-only future encoder and residual vector quantizer learn discrete codes at 1, 4, 16, and 32 positions over a 32-token target.
+A planner predicts coarse-to-fine residual VQ codes for the next segment. The autoregressive decoder cross-attends to the plan and question/evidence memory. A training-only future encoder and residual vector quantizer learn discrete codes at 1, 4, 16, and 32 positions over a 32-token target.
 
-Training mixes ordinary continuation chunks with explicit question-to-president response chunks. The sampler balances the two tasks. The chronological split is by whole calendar dates. For question-conditioned test examples, evaluation reports combined, transcript-only, and question-only results separately. If paired evidence is present, it also compares combined inputs with and without evidence. These are still teacher-forced 32-token window metrics, not a live turn-taking evaluation.
+## Time-coded event data
 
-Question-response links are heuristic, not human-verified. Only explicit `Q.` turns with a question mark or recognized interrogative opening enter strict Q&A training. Short answers that do not fill one target window are omitted. See `docs/data-audit.md` for current counts and known labeling errors.
+The target interaction is a timestamped, multi-speaker event, not an adjacent paragraph pair. `speechprefix/events.py` parses source spans and keeps their timestamps, speaker names, text, page metadata, and per-span annotations. The `turn-import` CLI writes these events as JSONL; see `data/README.md` for the schema.
 
-## External evidence
+Question-to-response alignments are supplied by a reviewer. They identify the prediction cutoff, visible trigger spans, any target-speaker response spans, other-speaker outcomes, and optional human-reviewed idea labels. The parser does not guess that a nearby span answers a question. `prediction_example_inputs` separates causal model inputs, gold targets, and source provenance. It constructs a transcript prefix and separate trigger text from visible spans. Page and StressLens annotations are preserved under provenance, not silently treated as information available to the model. Response status, semantic idea labels, and exact target words remain distinct.
 
-The Federal Register fetcher supplies dated metadata and abstracts without an API key. Retrieved documents are not joined to questions automatically. To train on evidence, provide JSONL rows keyed by `question_segment_id` as defined in `CONTEXT.md`; training rejects missing, invalid, same-day, or later publication dates because transcript timestamps are unavailable. At generation, use `--as-of` with an optional `--context-query`; evidence is rejected unless the checkpoint's training metadata records evidence pairs. The current local Federal Register sample is unpaired, so current checkpoints do not use it. Evidence input does not guarantee factual grounding, and generated text has no citation head; claim-level accuracy must be evaluated separately.
+**The existing trainer has not yet been adapted to this time-coded event schema.** Its question-response dataset is the older paragraph-based prototype, with noisy heuristic links; its checkpoint metrics are not evidence of performance on multi-speaker live interactions. The new event schema and metric functions provide a safer data/evaluation foundation, not a trained live-response model.
+
+## Evaluation
+
+Split by whole events, and reveal transcript spans only after their end time. Keep before-speech forecasting, ordinary continuation, and question-anchored response prediction separate. Evaluate response routing, human-labeled ideas, and target-speaker wording independently:
+
+- Idea labels: multi-label precision, recall, F1, and exact-set match on reviewed labels only.
+- Exact wording: word error rate, exact word-sequence match, and exact text match on linked target-speaker spans.
+- Response routing: target speaker responded, another speaker responded, no response, or uncertain alignment.
+
+`turn_evaluation.py` implements routing, idea, and wording metrics, but these metrics are not wired into SpeechPlan-H training yet. StressLens, topic, entity, and moderation annotations are source metadata, not verified idea labels. See `docs/evaluation.md` for the protocol.
+
+## Legacy paragraph experiment and evidence
+
+The current `hybrid-train` command still trains on legacy speech records and the paragraph segmenter. It supports separate transcript/question/evidence channels, chronological date splits, and teacher-forced 32-token windows. The old Q&A links require manual review; an intervening named speaker can invalidate them. Counts and limitations are recorded in `docs/data-audit.md`.
+
+The Federal Register fetcher stores dated metadata and abstracts without an API key. Documents are not joined to questions automatically. Same-day evidence is excluded because source transcripts do not provide event timestamps. Evidence-pair training remains separate from timestamped response alignment; evidence is not accepted unless a checkpoint records training on paired evidence. The decoder does not emit citations, so factual support must be evaluated separately.
 
 ## Training and generation
 
@@ -33,10 +49,10 @@ The Federal Register fetcher supplies dated metadata and abstracts without an AP
 
 Use `--max-steps` only for plumbing checks. The old format-1 checkpoint remains loadable for ordinary continuation but predates question conditioning; retrain before using `--question`.
 
-## Limits and prior run
+## Historical results and limits
 
 The GovInfo corpus contains mixed presidential documents, not a manually verified speech set. Its current data and heuristic Q&A labels do not support representative quality claims. Model scores are uncalibrated.
 
 The earlier format-1 experiment used a 6.78M-parameter model for five epochs on the then-current corpus and reached test token loss 4.2168 and top-1 accuracy 0.3320. Samples were repetitive and sometimes reproduced editorial notes. Those historical metrics do not evaluate question conditioning or external evidence.
 
-The first format-2 run used the v2 linker for one epoch: 89,443/18,729/15,271 continuation chunks and 2,794/533/437 Q&A chunks across train/validation/test. Test continuation loss/top-1 were 4.9272/0.2704. On those Q&A targets, combined transcript+question scored 4.3369/0.2431, transcript-only 3.9996/0.2574, and question-only 4.8784/0.1869. No evidence pairs were used, so combined and no-evidence results are identical. This run showed no question-conditioning benefit and generated text remained poor. The v3 linker now drops a question association when another named speaker intervenes; its current Q&A window counts are in `docs/data-audit.md`. The format-2 checkpoint is local and git-ignored and must be retrained before comparing against v3.
+The first format-2 run used the v2 paragraph linker for one epoch. On its held-out paragraph-based Q&A windows, combined transcript+question scored token loss/top-1 4.3369/0.2431, transcript-only 3.9996/0.2574, and question-only 4.8784/0.1869. It showed no question-conditioning benefit. These are legacy plumbing checks, not timestamped event-level results; the local checkpoint is ignored and must not be used as a live-response claim.

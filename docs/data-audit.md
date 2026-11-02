@@ -11,6 +11,8 @@ Current title-based provisional counts:
 - `press_interaction`: 40
 - `other`: 12
 
+The following counts describe the legacy paragraph segmenter only. These records have no per-turn timestamps and are not the canonical representation for live multi-speaker response prediction. The new time-coded event schema is documented in `data/README.md`; it has not yet been populated with a reviewed corpus.
+
 The paragraph segmenter produced 101,650 segments:
 
 - 6,454 explicit `Q.` turns classified as questions.
@@ -28,4 +30,4 @@ A no-key [Federal Register API](https://www.federalregister.gov/developers/docum
 
 Run `speechprefix audit --input data/speeches.jsonl` for title review, `speechprefix segment` to regenerate paragraph labels, and `speechprefix context-fetch --as-of DATE --query TOPIC` for time-bounded Federal Register context. The corpus, generated segments, world-context records, evidence-pair files, and checkpoints remain local/ignored. Review source-specific reuse terms before expanding collection or training.
 
-Do not use this sample for representative train/test claims. The corpus has not been manually reviewed for completeness, duplicates, Q&A attribution, or transcript rights.
+Do not use this sample for representative train/test claims. The corpus has not been manually reviewed for completeness, duplicates, Q&A attribution, or transcript rights. The paragraph-level QA examples in these counts are not substitutes for a time-coded, manually reviewed event set.

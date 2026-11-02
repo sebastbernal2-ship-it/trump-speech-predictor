@@ -22,7 +22,7 @@ A useful next version can add event context and topic-level outputs, but only af
 
 ## Data model direction
 
-The continuation demo reader treats blank-line-separated chunks as speeches for convenience. The pre-speech baseline uses JSONL records with stable speech ID, ISO date, event, source reference, and transcript text. Before research evaluation, add transcript-quality and permission notes. Build chronological splits at the speech level. Exclude duplicate or near-duplicate versions across splits.
+The continuation demo reader treats blank-line-separated chunks as speeches for convenience. The pre-speech baseline uses JSONL records with stable speech ID, ISO date, event, source reference, and transcript text. Question-anchored response prediction uses time-coded event JSONL with source speaker labels, page metadata, and manually reviewed response alignments. Keep transcript-quality, source, and reuse-term notes. Split whole speeches/events chronologically and exclude duplicate or near-duplicate versions across splits. The current SpeechPlan-H trainer has not yet been adapted to the time-coded event format.
 
 ## SpeechPlan-H
 
