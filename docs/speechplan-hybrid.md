@@ -14,7 +14,7 @@ A planner predicts coarse-to-fine residual VQ codes for the next segment. The au
 
 ## Time-coded event data
 
-The target interaction is a timestamped, multi-speaker event, not an adjacent paragraph pair. `speechprefix/events.py` parses source spans and keeps their timestamps, speaker names, text, page metadata, and per-span annotations. The `turn-import` CLI writes these events as JSONL; see `data/README.md` for the schema.
+The target interaction is a timestamped, multi-speaker event, not an adjacent paragraph pair. `speechprefix/events.py` parses source spans and keeps their timestamps, speaker names, text, page metadata, and per-span annotations. The `turn-import` CLI writes these events as JSONL; see `data/README.md` for the schema. The proposed explicit speech theme/section/talking-point hierarchy is described in `docs/hierarchical-speech-planner.md` and is not implemented in this model yet.
 
 Question-to-response alignments are supplied by a reviewer. They identify the prediction cutoff, visible trigger spans, any target-speaker response spans, other-speaker outcomes, and optional human-reviewed idea labels. The parser does not guess that a nearby span answers a question. `prediction_example_inputs` separates causal model inputs, gold targets, and source provenance. It constructs a transcript prefix and separate trigger text from visible spans. Page and StressLens annotations are preserved under provenance, not silently treated as information available to the model. Response status, semantic idea labels, and exact target words remain distinct.
 
@@ -32,7 +32,7 @@ Split by whole events, and reveal transcript spans only after their end time. Ke
 
 ## Legacy paragraph experiment and evidence
 
-The current `hybrid-train` command still trains on legacy speech records and the paragraph segmenter. It supports separate transcript/question/evidence channels, chronological date splits, and teacher-forced 32-token windows. The old Q&A links require manual review; an intervening named speaker can invalidate them. Counts and limitations are recorded in `docs/data-audit.md`.
+`hybrid-train` accepts dated speech records and uses chronological whole-date splits. It can train continuation from the target-only `trump-long-speeches.jsonl` export. Its optional Q&A windows still use the legacy paragraph segmenter; timestamped Q&A events are not connected to response training. Legacy Q&A links require manual review and may be invalidated by an intervening named speaker.
 
 The Federal Register fetcher stores dated metadata and abstracts without an API key. Documents are not joined to questions automatically. Same-day evidence is excluded because source transcripts do not provide event timestamps. Evidence-pair training remains separate from timestamped response alignment; evidence is not accepted unless a checkpoint records training on paired evidence. The decoder does not emit citations, so factual support must be evaluated separately.
 
@@ -40,14 +40,19 @@ The Federal Register fetcher stores dated metadata and abstracts without an API 
 
 ```sh
 .venv/bin/python -m speechprefix hybrid-train \
-  --input data/speeches.jsonl --output checkpoints/speechplan-h.pt --epochs 1
+  --input data/speeches.jsonl --output checkpoints/speechplan-h-run-001.pt --epochs 1 \
+  --registry models/registry.jsonl
 .venv/bin/python -m speechprefix hybrid \
   --model checkpoints/speechplan-h.pt \
   --prefix "We have been discussing our plans" \
   --question "What is the plan?"
 ```
 
-Use `--max-steps` only for plumbing checks. The old format-1 checkpoint remains loadable for ordinary continuation but predates question conditioning; retrain before using `--question`.
+Use `--max-steps` only for plumbing checks. Training refuses to overwrite an existing checkpoint and appends its run provenance, data/source hashes, and artifact hash to `models/registry.jsonl`. See `docs/model-versioning.md` for the registry schema and legacy inventory. The old format-1 checkpoint remains loadable for ordinary continuation but predates question conditioning; retrain before using `--question`.
+
+## Speech-corpus continuation run
+
+The first Roll Call speech run used 1,200 target-only events selected with at least 1,000 Trump words and an 80% target-word share. It trained one epoch on 10.11 million model tokens with a 7.26M-parameter model. The whole-date chronological split was 954/122/124 train/validation/test events (1988-06-05 through 2024-10-25, 2024-10-26 through 2026-01-06, and 2026-01-13 through 2026-11-02). It produced 251,841/30,896/32,627 continuation chunks and zero Q&A chunks. Validation continuation loss was 4.3586; held-out test loss was 4.4586 with top-1 accuracy 0.2747. On the identical held-out target tokens, a train-frequency unigram baseline with add-one smoothing scored loss 6.0024 and top-1 accuracy 0.0668. These are preliminary, uncalibrated continuation results from one run, not response prediction or semantic behavior accuracy. The ignored checkpoint is `checkpoints/rollcall-long-speech.pt`.
 
 ## Historical results and limits
 

@@ -17,6 +17,7 @@ from .forecast import load_records
 from .segments import segment_record
 from .hybrid_nn import SpeechPlanConfig, SpeechPlanHybrid
 from .model import tokenize
+from .model_versions import DEFAULT_REGISTRY, assert_new_model_artifact, create_model_version, register_model_version
 
 SPECIAL = ("<pad>", "<unk>", "<bos>", "<eos>", "<question-empty>", "<evidence-empty>")
 PAD_ID, UNK_ID, BOS_ID, EOS_ID, QUESTION_EMPTY_ID, EVIDENCE_EMPTY_ID = range(6)
@@ -282,7 +283,10 @@ def train_hybrid(
     max_steps: int = 0,
     seed: int = 17,
     evidence_pairs_path: str | Path | None = None,
+    registry_path: str | Path = DEFAULT_REGISTRY,
 ):
+    output_path = Path(output_path)
+    assert_new_model_artifact(output_path, registry_path)
     if epochs < 1 or batch_size < 1 or stride < 1 or max_steps < 0:
         raise ValueError("epochs, batch size, and stride must be positive; max_steps cannot be negative")
     if min(context_length, target_length, question_length, evidence_length) < 1:
@@ -365,6 +369,34 @@ def train_hybrid(
     )
     model = SpeechPlanHybrid(config).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, weight_decay=0.01)
+    task = "continuation+legacy-paragraph-qa" if len(train_questions) else "continuation"
+    model_version = create_model_version(
+        model_family="speechplan-h",
+        architecture="format-2",
+        task=task,
+        dataset_path=input_path,
+        additional_data_path=evidence_pairs_path,
+        config=model.checkpoint(vocabulary)["config"],
+        training={
+            "epochs": epochs, "batch_size": batch_size, "stride": stride,
+            "max_steps_per_epoch": max_steps, "seed": seed, "device": str(device),
+            "optimizer": "AdamW", "learning_rate": 3e-4, "weight_decay": 0.01,
+            "parameter_count": sum(parameter.numel() for parameter in model.parameters()),
+            "split": {
+                "method": "chronological whole-date groups",
+                "records": {
+                    "train": len(train_records),
+                    "validation": len(validation_records),
+                    "test": len(test_records),
+                },
+                "date_ranges": {
+                    "train": [train_records[0]["date"], train_records[-1]["date"]],
+                    "validation": [validation_records[0]["date"], validation_records[-1]["date"]],
+                    "test": [test_records[0]["date"], test_records[-1]["date"]],
+                },
+            },
+        },
+    )
     print(
         f"SpeechPlan-H initialized from scratch: {sum(p.numel() for p in model.parameters()):,} parameters; "
         f"device={device}; continuation chunks={len(train_data)}/{len(validation_data)}/{len(test_data)}; "
@@ -372,7 +404,6 @@ def train_hybrid(
     )
 
     best_validation = math.inf
-    output_path = Path(output_path)
     for epoch in range(1, epochs + 1):
         model.train()
         totals = Counter()
@@ -437,6 +468,7 @@ def train_hybrid(
                     "seed": seed,
                     "input_path": str(input_path),
                     "split": "chronological whole-date groups",
+                    "model_version": model_version,
                 },
             )
 
@@ -455,6 +487,20 @@ def train_hybrid(
     temporary = output_path.with_suffix(output_path.suffix + ".tmp")
     torch.save(checkpoint, temporary)
     temporary.replace(output_path)
+    register_model_version(
+        output_path,
+        model_version,
+        registry_path,
+        metrics={
+            "validation": {
+                "selection_loss": best_validation,
+                "continuation_loss": checkpoint["metadata"]["validation_continuation_loss"],
+                "qa_token_loss": checkpoint["metadata"]["validation_qa_token_loss"],
+            },
+            "test_continuation": test,
+            "test_qa": test_qa,
+        },
+    )
     print(
         f"held-out chronological continuation loss: {test['loss']:.4f}; "
         f"top1={test['token_accuracy']:.4f}"
@@ -470,6 +516,7 @@ def train_hybrid(
         "test_top1_accuracy": test["token_accuracy"],
         "test_qa": test_qa,
         "output": str(output_path),
+        "model_version": model_version["model_version"],
     }
 
 

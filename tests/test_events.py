@@ -169,6 +169,16 @@ class TimestampedEventTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "already exists"):
                 append_event(output, event)
 
+    def test_source_timestamp_anomalies_are_preserved_but_not_used_for_prediction(self):
+        page = PAGE.replace(
+            "Donald Trump 00:00:03-00:00:05 (2 sec)",
+            "Donald Trump 00:00:01-00:00:05 (4 sec)",
+        )
+        event = parse_timestamped_transcript(page, METADATA, allow_timestamp_anomalies=True)
+        self.assertEqual(event["timestamp_anomalies"][0]["reasons"], ["start_time_out_of_order"])
+        with self.assertRaisesRegex(ValueError, "timestamp anomalies"):
+            add_prediction_examples(event, [])
+
     def test_parser_rejects_nonmonotonic_turns(self):
         page = PAGE.replace(
             "Donald Trump 00:00:03-00:00:05 (2 sec)",

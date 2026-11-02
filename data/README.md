@@ -1,16 +1,42 @@
 # Local transcript data
 
-Do not commit collected transcripts by default. The `speechprefix import-govinfo` command can append eligible CPD records to `speeches.jsonl`. You can also add permitted records manually, one JSON object per line, with these required string fields:
+Do not commit collected transcripts by default. The `speechprefix import-govinfo` command can append eligible CPD records to `speeches.jsonl`. `speechprefix import-rollcall` stores permitted timestamped Factba.se events in `rollcall-events.jsonl`. You can also add permitted records manually, one JSON object per line, with these required string fields:
 
 ```json
 {"speech_id":"unique-id","date":"2024-01-01","event":"event name","source":"URL or archive reference","text":"Transcript text..."}
 ```
 
-Use ISO dates (`YYYY-MM-DD`) so chronological ordering is reliable. Keep source and license/permission notes. Do not include text you are not allowed to store or process. The data is user-supplied; this repository does not download transcripts.
+Use ISO dates (`YYYY-MM-DD`) so chronological ordering is reliable. Keep source and license/permission notes. Do not include text you are not allowed to store or process. The data may be user-supplied or collected from a source with permission. Review and record source-specific reuse terms before importing or training. Roll Call's clean, timestamp-ordered video transcripts are written to `rollcall-events.jsonl`; text-only pages and pages with timestamp anomalies are excluded from this file.
 
 ## Time-coded event transcripts
 
-Use the time-coded format for question-response forecasting. Save the source page text, including its `Full Transcript` section, and a metadata JSON file. Import with:
+Use the time-coded format for question-response forecasting. For Roll Call Factba.se data, the importer reads the public transcript-page index, fetches each event page, and preserves timestamps, speaker labels, per-span annotations, page-level metadata, source URLs, and the supplied permission note. It skips pages without timestamped transcript spans and pages with timestamp anomalies, and resumes by event ID. The lower-level parser can preserve and flag timestamp anomalies for review, but prediction-example functions reject such events. Keep this output separate from the legacy GovInfo records.
+
+```sh
+python3 -m speechprefix import-rollcall --output data/rollcall-events.jsonl
+```
+
+Use `--limit 100` for a small smoke-test batch, `--start-date`/`--end-date` to restrict event dates, and `--delay` to control request pacing. The default `--limit 0` considers all source records and retains only timestamped video pages with ordered, nonnegative-duration spans. Text-only pages, pages without transcripts, and pages with timestamp anomalies are excluded. These downloaded texts remain local/ignored.
+
+Create disjoint, task-oriented files from the master corpus with:
+
+```sh
+python3 -m speechprefix split-rollcall
+```
+
+This writes four files under `data/rollcall-by-type/`: Q&A candidates contain Trump and questioner turns; speech candidates contain Trump turns from `Speech`, `Remarks`, `Weekly Address`, or `Convention` events with no questioner turn; other Trump events contain Trump but match neither group; non-Trump events have no Trump-labeled turn. Q&A candidates do not include reviewed question-to-answer links. The command refuses to overwrite an existing output directory. The master corpus is unchanged.
+
+Export a target-only continuation-training set from long speech candidates with:
+
+```sh
+python3 -m speechprefix prepare-rollcall-speeches
+```
+
+By default, an event must contain at least 1,000 Trump whitespace-delimited words, with Trump contributing at least 80% of all event words. The export keeps only Trump turns and writes standard dated speech records to `trump-long-speeches.jsonl`; the full timestamped source remains in the master corpus. Use the `--min-target-words` and `--min-target-share` options to change the selection thresholds.
+
+Human-reviewed hierarchical speech plans belong in the separate, ignored `rollcall-speech-plans.jsonl`, keyed by event ID. Each theme, section, and talking point must cite target-speaker turn IDs. Only reviewed, validated plans are eligible as semantic training labels; see `docs/hierarchical-speech-planner.md` for the plan tree and example format. `rollcall-plan-review-pilot.jsonl` is a local 20-speech draft batch with target turns and empty plan templates, not reviewed training data.
+
+For a manually saved page, the existing `turn-import` command accepts the source page text, including its `Full Transcript` section, and a metadata JSON file:
 
 ```sh
 python3 -m speechprefix turn-import \

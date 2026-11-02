@@ -6,7 +6,7 @@ from datetime import date
 import json
 from pathlib import Path
 import re
-from typing import Sequence
+from typing import Iterable, Sequence
 
 
 TIMECODE = re.compile(r"^(?:\d{2}:)?\d{2}:\d{2}$")
@@ -46,7 +46,9 @@ def _annotation(line: str) -> dict | None:
     return None
 
 
-def parse_timestamped_transcript(text: str, metadata: dict) -> dict:
+def parse_timestamped_transcript(
+    text: str, metadata: dict, *, allow_timestamp_anomalies: bool = False,
+) -> dict:
     """Parse a page's Full Transcript section without inferring response links."""
     if not isinstance(metadata, dict):
         raise ValueError("event metadata must be a JSON object")
@@ -78,6 +80,7 @@ def parse_timestamped_transcript(text: str, metadata: dict) -> dict:
         raise ValueError("target_speaker_aliases must be a list of names")
     target_names = {metadata["target_speaker"].strip().casefold(), *(alias.strip().casefold() for alias in aliases)}
     turns = []
+    timestamp_anomalies = []
     current = None
     body: list[str] = []
     last_start = -1
@@ -99,7 +102,12 @@ def parse_timestamped_transcript(text: str, metadata: dict) -> dict:
             finish()
             begin = parse_timecode(match.group("start"))
             end = parse_timecode(match.group("end"))
-            if end < begin or begin < last_start:
+            anomaly_reasons = []
+            if end < begin:
+                anomaly_reasons.append("negative_duration")
+            if begin < last_start:
+                anomaly_reasons.append("start_time_out_of_order")
+            if anomaly_reasons and not allow_timestamp_anomalies:
                 raise ValueError("turn timestamps must be ordered and have nonnegative duration")
             last_start = begin
             speaker_name = match.group("speaker").strip()
@@ -118,9 +126,17 @@ def parse_timestamped_transcript(text: str, metadata: dict) -> dict:
                 "end_seconds": end,
                 "speaker_name": speaker_name,
                 "speaker_role": role,
+                "timestamp_valid": not anomaly_reasons,
                 "duration_label": match.group("duration").strip(),
                 "annotations": [],
             }
+            if anomaly_reasons:
+                timestamp_anomalies.append({
+                    "turn_id": current["turn_id"],
+                    "start_timecode": match.group("start"),
+                    "end_timecode": match.group("end"),
+                    "reasons": anomaly_reasons,
+                })
             body = []
             continue
         if current is None or not stripped:
@@ -146,6 +162,7 @@ def parse_timestamped_transcript(text: str, metadata: dict) -> dict:
         "target_speaker_aliases": aliases,
         "page_metadata": {**page_metadata, "raw_header": "\n".join(lines[:start - 1]).strip()},
         "turns": turns,
+        "timestamp_anomalies": timestamp_anomalies,
         "prediction_examples": [],
     }
 
@@ -156,6 +173,10 @@ def add_prediction_examples(event: dict, annotations: Sequence[dict]) -> dict:
         raise ValueError("prediction annotations must be a list")
     if any(not isinstance(annotation, dict) for annotation in annotations):
         raise ValueError("each prediction annotation must be an object")
+    if event.get("timestamp_anomalies") or any(
+        not turn.get("timestamp_valid", True) for turn in event.get("turns", [])
+    ):
+        raise ValueError("cannot add response alignments to an event with timestamp anomalies")
     turns = event.get("turns", [])
     by_id = {turn["turn_id"]: turn for turn in turns}
     if len(by_id) != len(turns):
@@ -243,6 +264,10 @@ def add_prediction_examples(event: dict, annotations: Sequence[dict]) -> dict:
 
 def prediction_example_inputs(event: dict, example: dict) -> dict:
     """Materialize one causal model input from its stored turn IDs."""
+    if event.get("timestamp_anomalies") or any(
+        not turn.get("timestamp_valid", True) for turn in event.get("turns", [])
+    ):
+        raise ValueError("cannot materialize model inputs from an event with timestamp anomalies")
     by_id = {turn["turn_id"]: turn for turn in event.get("turns", [])}
     visible = example.get("visible_turn_ids", [])
     triggers = example.get("trigger_turn_ids", [])
@@ -319,14 +344,30 @@ def prediction_example_inputs(event: dict, example: dict) -> dict:
     }
 
 
-def append_event(path: str | Path, event: dict) -> None:
-    """Append one event JSONL row, refusing duplicate event IDs."""
+def append_events(path: str | Path, events: Iterable[dict]) -> int:
+    """Append event rows, skipping IDs already present in the JSONL file."""
     output = Path(path)
+    existing_ids = set()
     if output.exists():
         with output.open(encoding="utf-8") as stream:
             for line in stream:
-                if line.strip() and json.loads(line).get("event_id") == event["event_id"]:
-                    raise ValueError(f"event already exists: {event['event_id']}")
+                if line.strip():
+                    existing_ids.add(json.loads(line)["event_id"])
     output.parent.mkdir(parents=True, exist_ok=True)
+    written = 0
     with output.open("a", encoding="utf-8") as stream:
-        stream.write(json.dumps(event, ensure_ascii=False) + "\n")
+        for event in events:
+            event_id = event["event_id"]
+            if event_id in existing_ids:
+                continue
+            stream.write(json.dumps(event, ensure_ascii=False) + "\n")
+            stream.flush()
+            existing_ids.add(event_id)
+            written += 1
+    return written
+
+
+def append_event(path: str | Path, event: dict) -> None:
+    """Append one event JSONL row, refusing duplicate event IDs."""
+    if append_events(path, [event]) == 0:
+        raise ValueError(f"event already exists: {event['event_id']}")

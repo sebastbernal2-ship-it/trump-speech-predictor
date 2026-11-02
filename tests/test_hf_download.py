@@ -15,12 +15,15 @@ def fake_hub(download):
 
 
 class DownloadTests(unittest.TestCase):
-    def test_retries_transient_failure_then_succeeds(self):
+    def test_retries_transient_failure_then_succeeds_with_pinned_revision(self):
         download = Mock(side_effect=[TimeoutError(), "/cached/model"])
         with patch.dict(sys.modules, fake_hub(download)), patch("time.sleep") as sleep:
-            result = download_snapshot("example/model", retries=3, timeout_seconds=2)
+            result = download_snapshot(
+                "example/model", retries=3, timeout_seconds=2, revision="abc123"
+            )
         self.assertEqual(result, "/cached/model")
         self.assertEqual(download.call_count, 2)
+        self.assertEqual(download.call_args.kwargs["revision"], "abc123")
         sleep.assert_called_once_with(2)
 
     def test_stops_after_bounded_transient_failures(self):

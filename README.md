@@ -24,9 +24,9 @@ For the continuation baseline, put permitted transcript text in `data/transcript
 
 ```sh
 python3 -m speechprefix import-govinfo --limit 25
-python3 -m speechprefix train --input data/speeches.jsonl --output model.json
-python3 -m speechprefix predict --model model.json --prefix "We are going to"
-python3 -m speechprefix stream --model model.json
+python3 -m speechprefix train --input data/speeches.jsonl --output checkpoints/ngram-run-001.json
+python3 -m speechprefix predict --model checkpoints/ngram-run-001.json --prefix "We are going to"
+python3 -m speechprefix stream --model checkpoints/ngram-run-001.json
 python3 -m speechprefix evaluate --input data/speeches.jsonl
 python3 -m speechprefix forecast --input data/speeches.jsonl
 python3 -m speechprefix audit --input data/speeches.jsonl
@@ -40,13 +40,13 @@ The GovInfo importer reads `GOVINFO_API_KEY` from the current environment or a r
 In stream mode, submit each new chunk on its own line. A blank line exits. For SpeechPlan-H, train and generate locally:
 
 ```sh
-.venv/bin/python -m speechprefix hybrid-train --input data/speeches.jsonl --output checkpoints/speechplan-h.pt --epochs 1
-.venv/bin/python -m speechprefix hybrid --model checkpoints/speechplan-h.pt --prefix "We have been discussing our plans" --question "What is the plan?"
+.venv/bin/python -m speechprefix hybrid-train --input data/speeches.jsonl --output checkpoints/speechplan-h-run-001.pt --epochs 1
+.venv/bin/python -m speechprefix hybrid --model checkpoints/speechplan-h-run-001.pt --prefix "We have been discussing our plans" --question "What is the plan?"
 ```
 
-The older `pretrained-hybrid` command is only a candidate-fusion comparison baseline; it may use external checkpoints. SpeechPlan-H's architecture and known limits are described in `docs/speechplan-hybrid.md`.
+The older `pretrained-hybrid` command is only a candidate-fusion comparison baseline; it may use external checkpoints. Both trained-model commands append immutable run metadata and artifact hashes to `models/registry.jsonl` and refuse to overwrite an existing artifact. SpeechPlan-H's architecture and known limits are described in `docs/speechplan-hybrid.md`.
 
-`segment` is the legacy paragraph-based pipeline; its question-response links are heuristic and are not the target representation for live exchanges. `turn-import` parses a time-coded transcript page and event metadata, preserving speaker turns, timestamps, page annotations, and source attribution. It does not guess which question a response answers; response links and idea labels must be reviewed and supplied in the metadata JSON. See `data/README.md` for the event format. The current SpeechPlan-H trainer has not yet been adapted to these event examples, so do not interpret the historical paragraph-based Q&A results as live-response performance. `context-fetch` calls the public Federal Register API without an API key and stores dated titles/abstracts locally; it excludes documents published on the prediction date because transcript event times are unavailable. The current Federal Register sample is unpaired and is not model input. Current legacy-corpus counts and limitations are in `docs/data-audit.md`.
+`segment` is the legacy paragraph-based pipeline; its question-response links are heuristic and are not the target representation for live exchanges. With source permission, `import-rollcall` collects Roll Call Factba.se's timestamped event pages into the separate, ignored `data/rollcall-events.jsonl`; `split-rollcall` derives disjoint Trump speech, Q&A-candidate, other-Trump, and non-Trump files without changing the master corpus. `turn-import` parses a manually saved time-coded page. Both preserve speaker turns, timestamps, page annotations, and source attribution without guessing which question a response answers. `prepare-rollcall-speeches` exports long, Trump-dominant speech text for continuation training; timestamped Q&A events still need reviewed response links before supervised use. See `data/README.md` for the split and export details. Legacy paragraph-based Q&A results are not live-response performance. `context-fetch` calls the public Federal Register API without an API key and stores dated titles/abstracts locally; it excludes documents published on the prediction date because transcript event times are unavailable. The current Federal Register sample is unpaired and is not model input. Current legacy-corpus counts and limitations are in `docs/data-audit.md`.
 
 ## Three tasks, separate evaluations
 
@@ -56,10 +56,10 @@ The older `pretrained-hybrid` command is only a candidate-fusion comparison base
 
 Never mix these scores. A continuation model sees the target transcript prefix; a pre-speech model must not. Question-response evaluation must reveal only turns observable by its prediction time.
 
-SpeechPlan-H is a from-scratch prototype with a coarse-to-fine residual VQ planner whose predicted codes become cross-attention memory for an autoregressive Transformer decoder. It is a small word-level language model, not a pretrained large language model. Its training code performs a chronological, whole-date split, but the current corpus contains mixed presidential records that have not been manually verified as speeches. Treat all resulting metrics as plumbing checks until a clean speech set is assembled. Exact wording and semantic idea predictions need separate evaluations. The new time-coded event parser and metric functions are not yet connected to SpeechPlan-H training.
+SpeechPlan-H is a from-scratch prototype with a coarse-to-fine residual VQ planner whose predicted codes become cross-attention memory for an autoregressive Transformer decoder. It is a small word-level language model, not a pretrained large language model. Its training code performs a chronological, whole-date split, but the legacy input corpus contains mixed presidential records that have not been manually verified as speeches. Treat those metrics as plumbing checks. SpeechPlan-H can train continuation from the derived long-speech export, but its response-training path is not connected to timestamped Q&A events. The proposed explicit theme → section → talking-point plan is documented separately and requires reviewed labels before model training. Exact wording and semantic idea predictions need separate evaluations.
 
 ## Data and evaluation cautions
 
 Use transcripts you have permission to use. The GovInfo importer is an initial source adapter for the CPD collection, not a complete archive of Trump's speeches. It does not capture campaign rallies that were not published in CPD. Confirm the applicable reuse terms for each record. Record source, date, event, and transcript-quality notes for every speech. Keep whole speeches together in chronological train/validation/test splits. Do not randomly split overlapping excerpts. Report log loss and top-k accuracy for continuation; assess probability calibration before describing scores as confidence. Pre-speech forecasts need their own dated target labels and metrics.
 
-See `docs/architecture.md` for component boundaries, `docs/evaluation.md` for the current protocol, and `docs/speechplan-hybrid.md` for the SpeechPlan-H architecture and training procedure.
+See `docs/architecture.md` for component boundaries, `docs/evaluation.md` for the current protocol, `docs/speechplan-hybrid.md` for the SpeechPlan-H architecture and training procedure, and `docs/model-versioning.md` for the append-only artifact registry and reproducibility metadata.

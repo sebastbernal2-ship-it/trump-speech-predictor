@@ -8,15 +8,20 @@ from .hf_download import download_snapshot
 from .hybrid import Candidate
 
 
+DEFAULT_MODEL_ID = "openai-community/gpt2"
+DEFAULT_MODEL_REVISION = "607a30d783dfa663caf39e06633721c8d4cfcd7e"
+
+
 class CausalLM:
     """Small adapter around a Transformers causal language model."""
 
     def __init__(
         self,
-        model_id: str = "openai-community/gpt2",
+        model_id: str = DEFAULT_MODEL_ID,
         device: str | None = None,
         download_retries: int = 3,
         download_timeout: int = 20,
+        revision: str | None = None,
     ):
         try:
             import torch
@@ -26,9 +31,13 @@ class CausalLM:
 
         self.torch = torch
         local_model = Path(model_id)
+        requested_revision = revision or (DEFAULT_MODEL_REVISION if model_id == DEFAULT_MODEL_ID else None)
         snapshot = str(local_model) if local_model.is_dir() else download_snapshot(
-            model_id, retries=download_retries, timeout_seconds=download_timeout
+            model_id, retries=download_retries, timeout_seconds=download_timeout,
+            revision=requested_revision,
         )
+        self.model_id = model_id
+        self.model_revision = requested_revision or (Path(snapshot).name if not local_model.is_dir() else None)
         self.tokenizer = AutoTokenizer.from_pretrained(snapshot, local_files_only=True)
         if self.tokenizer.pad_token_id is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token

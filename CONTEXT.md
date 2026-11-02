@@ -36,6 +36,26 @@ _Avoid_: Model-internal representation
 A model-internal summary of ideas expressed in earlier observed spans. It is not a verified human annotation.
 _Avoid_: Idea label
 
+**Speech theme**:
+A broad message or idea that may span several parts of one speech.
+_Avoid_: Plan code
+
+**Speech section**:
+A contiguous part of a speech that develops a theme or subtopic.
+_Avoid_: Talking point
+
+**Talking point**:
+A specific claim, story, example, promise, attack, or mention developed within a section and grounded in transcript spans.
+_Avoid_: Phrase, plan code
+
+**Speech plan**:
+A human-readable, ordered hierarchy of themes, sections, and talking points, kept distinct from the exact transcript wording.
+_Avoid_: Model-internal representation
+
+**Plan code**:
+A model-internal quantized representation with no verified human-readable meaning.
+_Avoid_: Speech theme, talking point, concept label
+
 **Event-time evidence**:
 Information with a recorded source and publication time earlier than the prediction point. If only dates are available, same-day evidence is excluded.
 _Avoid_: World context without an as-of time

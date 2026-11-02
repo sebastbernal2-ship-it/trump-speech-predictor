@@ -13,6 +13,10 @@ data/world_context.jsonl
 data/evidence_pairs.jsonl
 data/qa_review.csv
 data/events.jsonl
+data/rollcall-events.jsonl
+data/rollcall-by-type/
+data/rollcall-speech-plans.jsonl
+data/rollcall-plan-review-pilot.jsonl
 checkpoints/
 .DS_Store
 

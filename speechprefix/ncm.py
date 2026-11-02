@@ -8,7 +8,9 @@ from pathlib import Path
 from .hf_download import download_snapshot
 
 NCM_REPO = "hazyresearch/ncm-checkpoints"
-NCM_COMMIT = "c70274273f489abc73832b2b98584a8483b6b203"
+NCM_WEIGHT_REVISION = "d342ce8aaea58830eef3b8ad473664673e41f692"
+NCM_SOURCE_COMMIT = "c70274273f489abc73832b2b98584a8483b6b203"
+BERT_TOKENIZER_REVISION = "86b5e0934494bd15c9632b12f734a8a67f723594"
 
 
 class NCMGenerator:
@@ -46,16 +48,21 @@ class NCMGenerator:
             NCM_REPO,
             retries=download_retries,
             timeout_seconds=download_timeout,
+            revision=NCM_WEIGHT_REVISION,
             allow_patterns=[
                 "lm1b/tokenizer.pt",
                 "lm1b/small/generator.pt",
                 "lm1b/small/config.yaml",
             ],
         )
+        self.checkpoint_revision = NCM_WEIGHT_REVISION
+        self.source_commit = NCM_SOURCE_COMMIT
+        self.tokenizer_revision = BERT_TOKENIZER_REVISION
         tokenizer_files = download_snapshot(
             "bert-base-uncased",
             retries=download_retries,
             timeout_seconds=download_timeout,
+            revision=BERT_TOKENIZER_REVISION,
             allow_patterns=[
                 "config.json", "tokenizer.json", "tokenizer_config.json",
                 "special_tokens_map.json", "vocab.txt",

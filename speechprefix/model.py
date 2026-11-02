@@ -55,12 +55,15 @@ class NGramModel:
                 return [(word, count / total) for word, count in ranked[:limit]]
         return []
 
-    def to_dict(self) -> dict:
-        return {
+    def to_dict(self, metadata: dict | None = None) -> dict:
+        payload = {
             "format": 1,
             "order": self.order,
             "counts": [[list(context), dict(counter)] for context, counter in self.counts.items()],
         }
+        if metadata is not None:
+            payload["model_version"] = metadata
+        return payload
 
     @classmethod
     def from_dict(cls, payload: dict) -> "NGramModel":
@@ -70,8 +73,14 @@ class NGramModel:
         vocabulary = {word for options in counts.values() for word in options if word not in {"<s>", "</s>"}}
         return cls(int(payload["order"]), counts, vocabulary)
 
-    def save(self, path: str | Path) -> None:
-        Path(path).write_text(json.dumps(self.to_dict(), ensure_ascii=False), encoding="utf-8")
+    def save(self, path: str | Path, metadata: dict | None = None) -> None:
+        output = Path(path)
+        if output.exists():
+            raise FileExistsError(f"model artifact already exists; choose a new versioned path: {output}")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        temporary = output.with_suffix(output.suffix + ".tmp")
+        temporary.write_text(json.dumps(self.to_dict(metadata), ensure_ascii=False), encoding="utf-8")
+        temporary.replace(output)
 
     @classmethod
     def load(cls, path: str | Path) -> "NGramModel":
