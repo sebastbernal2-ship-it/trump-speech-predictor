@@ -13,7 +13,12 @@ SPEAKER_PATTERNS = (
     ("president", re.compile(r"^\s*(THE PRESIDENT|PRESIDENT TRUMP|DONALD J\. TRUMP|TRUMP)\s*[.:—-]\s*", re.IGNORECASE)),
     ("other", re.compile(r"^\s*((?:MR|MS|MRS|DR)\.\s+[^.\n]{1,60})\.\s*", re.IGNORECASE)),
 )
-CLASSIFIER_VERSION = "explicit-speaker-prefix-v1"
+CLASSIFIER_VERSION = "explicit-speaker-prefix-v2"
+INTERROGATIVE_START = re.compile(
+    r"^(?:who|what|when|where|why|how|which|whom|whose|is|are|was|were|do|does|did|"
+    r"can|could|will|would|should|has|have|had)\b",
+    re.IGNORECASE,
+)
 
 
 def segment_record(record: dict) -> list[dict]:
@@ -25,6 +30,7 @@ def segment_record(record: dict) -> list[dict]:
     ]
     segments = []
     active_question_id = None
+    active_turn_type = None
     answer_started = False
     record_type = record.get("provisional_type") or classify_title(record.get("event", ""))
     for index, paragraph in enumerate(paragraphs):
@@ -39,16 +45,30 @@ def segment_record(record: dict) -> list[dict]:
 
         segment_id = f"{record['speech_id']}:{index:04d}"
         response_to = None
+        prompted_by = None
+        question_cue = None
         if role == "questioner":
-            kind = "question"
+            question_cue = (
+                "question_mark" if "?" in content
+                else "interrogative_prefix" if INTERROGATIVE_START.match(content)
+                else "no_interrogative_marker"
+            )
+            kind = "question" if question_cue != "no_interrogative_marker" else "reporter_prompt"
             active_question_id = segment_id
+            active_turn_type = kind
             answer_started = False
-            confidence = 0.99
+            confidence = 0.95 if kind == "question" else 0.75
         elif role == "president":
-            kind = "presidential_answer" if active_question_id else "presidential_remarks"
-            response_to = active_question_id
-            answer_started = bool(response_to)
-            confidence = 0.95 if response_to else 0.90
+            if active_turn_type == "reporter_prompt":
+                kind = "presidential_response_to_prompt"
+                prompted_by = active_question_id
+            elif active_turn_type == "question":
+                kind = "presidential_answer"
+                response_to = active_question_id
+            else:
+                kind = "presidential_remarks"
+            answer_started = bool(response_to or prompted_by)
+            confidence = 0.95 if response_to else 0.75 if prompted_by else 0.90
         elif role == "other":
             kind = "other_speaker_turn"
             confidence = 0.95
@@ -58,6 +78,7 @@ def segment_record(record: dict) -> list[dict]:
 
         if role not in {"questioner", "president"} and answer_started:
             active_question_id = None
+            active_turn_type = None
             answer_started = False
 
         segments.append({
@@ -72,6 +93,8 @@ def segment_record(record: dict) -> list[dict]:
             "speaker_label": label,
             "segment_type": kind,
             "response_to": response_to,
+            "prompted_by": prompted_by,
+            "question_cue": question_cue,
             "label_method": "explicit_speaker_prefix" if role != "unknown" else "unlabeled",
             "label_confidence": confidence,
             "text": paragraph,

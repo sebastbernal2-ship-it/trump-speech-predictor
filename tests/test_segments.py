@@ -26,6 +26,17 @@ class SegmentTests(unittest.TestCase):
         self.assertEqual(segments[2]["response_to"], segments[1]["segment_id"])
         self.assertIsNone(segments[4]["response_to"])
 
+    def test_reporter_floor_cue_is_not_a_question(self):
+        record = {
+            "speech_id": "fixture", "date": "2025-01-01", "event": "Press interaction",
+            "source": "fixture", "text": "Q. Sir, right here.\n\nThe President. Yes, behind you, please.",
+        }
+        segments = segment_record(record)
+        self.assertEqual(segments[0]["segment_type"], "reporter_prompt")
+        self.assertEqual(segments[1]["segment_type"], "presidential_response_to_prompt")
+        self.assertEqual(segments[1]["prompted_by"], segments[0]["segment_id"])
+        self.assertIsNone(segments[1]["response_to"])
+
     def test_unlabeled_question_mark_is_not_promoted_to_question(self):
         record = {
             "speech_id": "fixture", "date": "2025-01-01", "event": "Remarks",
