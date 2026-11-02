@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "speechprefix"
+version = "0.1.0"
+description = "Offline research prototype for speech forecasting and prefix-conditioned word prediction"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+ml = ["torch>=2.15,<2.16", "transformers>=5.22,<6"]
+ncm = ["torch>=2.15,<2.16", "transformers>=5.22,<6", "hydra-core>=1.3,<2", "omegaconf>=2.3,<3"]
+
+[project.scripts]
+speechprefix = "speechprefix.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["speechprefix*"]
+
+[tool.setuptools.package-data]
+speechprefix = ["configs/*.yaml", "_vendor/ncm/LICENSE", "_vendor/ncm/UPSTREAM.md", "_vendor/ncm/models/*.py", "_vendor/ncm/utils/*.py", "_vendor/ncm/tokenization/*.py"]

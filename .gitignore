@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+model.json
+*.model.json
+data/speeches.jsonl
+checkpoints/
+.DS_Store
+
+.env

@@ -1,0 +1,204 @@
+"""Command-line interface for local speech experiments."""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+import sys
+
+from .model import NGramModel, evaluate_continuation
+
+
+def load_speeches(path: str) -> list[str]:
+    source = Path(path)
+    if source.suffix == ".jsonl":
+        from .forecast import load_records
+
+        return [record["text"] for record in load_records(source)]
+    text = source.read_text(encoding="utf-8")
+    return [part.strip() for part in text.split("\n\n") if part.strip()]
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="speechprefix")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    train = sub.add_parser("train", help="train an n-gram baseline")
+    train.add_argument("--input", required=True)
+    train.add_argument("--output", required=True)
+    train.add_argument("--order", type=int, default=5)
+
+    predict = sub.add_parser("predict", help="rank next words from a prefix")
+    predict.add_argument("--model", required=True)
+    predict.add_argument("--prefix", default="")
+    predict.add_argument("--top", type=int, default=10)
+
+    stream = sub.add_parser("stream", help="interactively update prefix predictions")
+    stream.add_argument("--model", required=True)
+    stream.add_argument("--top", type=int, default=10)
+
+    evaluate = sub.add_parser("evaluate", help="hold out final speech and replay it")
+    evaluate.add_argument("--input", required=True)
+    evaluate.add_argument("--order", type=int, default=5)
+
+    forecast = sub.add_parser("forecast", help="forecast recurring phrases before the next speech")
+    forecast.add_argument("--input", required=True, help="chronological JSONL speech records")
+    forecast.add_argument("--top", type=int, default=20)
+
+    govinfo = sub.add_parser("import-govinfo", help="download a bounded batch of Trump-era presidential records")
+    govinfo.add_argument("--output", default="data/speeches.jsonl")
+    govinfo.add_argument("--limit", type=int, default=25)
+    govinfo.add_argument("--period", choices=("all", "2017", "2025"), default="all")
+    govinfo.add_argument("--delay", type=float, default=0.25)
+
+    audit = sub.add_parser("audit", help="summarize imported record types without reading transcript bodies")
+    audit.add_argument("--input", required=True, help="JSONL speech records")
+
+    llm = sub.add_parser("llm", help="run a Hugging Face causal-LM continuation baseline")
+    llm.add_argument("--model", default="openai-community/gpt2")
+    llm.add_argument("--prefix", required=True)
+    llm.add_argument("--candidates", type=int, default=8)
+    llm.add_argument("--tokens", type=int, default=32)
+    llm.add_argument("--download-retries", type=int, default=3)
+    llm.add_argument("--download-timeout", type=int, default=20, help="per-request timeout in seconds")
+
+    ncm = sub.add_parser("ncm-generate", help="generate coarse-to-fine candidates with official Stanford NCM weights")
+    ncm.add_argument("--count", type=int, default=2)
+    ncm.add_argument("--download-retries", type=int, default=3)
+    ncm.add_argument("--download-timeout", type=int, default=20)
+
+    hybrid_train = sub.add_parser("hybrid-train", help="train the from-scratch SpeechPlan-H model on local records")
+    hybrid_train.add_argument("--input", required=True)
+    hybrid_train.add_argument("--output", default="checkpoints/speechplan-h.pt")
+    hybrid_train.add_argument("--epochs", type=int, default=1)
+    hybrid_train.add_argument("--batch-size", type=int, default=32)
+    hybrid_train.add_argument("--stride", type=int, default=32)
+    hybrid_train.add_argument("--device", default="auto")
+    hybrid_train.add_argument("--max-steps", type=int, default=0, help="cap training steps per epoch for smoke tests")
+
+    hybrid = sub.add_parser("hybrid", help="generate with a trained from-scratch SpeechPlan-H checkpoint")
+    hybrid.add_argument("--model", required=True)
+    hybrid.add_argument("--prefix", required=True)
+    hybrid.add_argument("--tokens", type=int, default=32)
+    hybrid.add_argument("--device", default="auto")
+
+    pretrained = sub.add_parser("pretrained-hybrid", help="run the separate GPT-2/NCM candidate-fusion baseline")
+    pretrained.add_argument("--prefix", required=True)
+    pretrained.add_argument("--llm-candidates", type=int, default=4)
+    pretrained.add_argument("--ncm-candidates", type=int, default=4)
+    pretrained.add_argument("--llm-weight", type=float, default=0.5, help="provisional; fit on validation data")
+    pretrained.add_argument("--ncm-weight", type=float, default=0.5, help="provisional; fit on validation data")
+    pretrained.add_argument("--download-retries", type=int, default=3)
+    pretrained.add_argument("--download-timeout", type=int, default=20)
+
+    args = parser.parse_args(argv)
+    try:
+        if args.command == "train":
+            model = NGramModel.train(load_speeches(args.input), order=args.order)
+            model.save(args.output)
+            print(f"Saved order-{model.order} model to {args.output}")
+        elif args.command == "predict":
+            for word, probability in NGramModel.load(args.model).predict(args.prefix, args.top):
+                print(f"{word}\t{probability:.4f}")
+        elif args.command == "stream":
+            model = NGramModel.load(args.model)
+            prefix: list[str] = []
+            print("Enter transcript chunks; blank line exits.")
+            while True:
+                try:
+                    chunk = input("> ")
+                except EOFError:
+                    break
+                if not chunk.strip():
+                    break
+                prefix.append(chunk.strip())
+                print("  " + ", ".join(f"{w} ({p:.3f})" for w, p in model.predict(" ".join(prefix), args.top)))
+        elif args.command == "evaluate":
+            result = evaluate_continuation(load_speeches(args.input), order=args.order)
+            for key, value in result.items():
+                print(f"{key}: {value:.4f}" if isinstance(value, float) else f"{key}: {value}")
+        elif args.command == "forecast":
+            from .forecast import forecast_phrases, load_records
+
+            records = load_records(args.input)
+            for phrase, probability in forecast_phrases(records, top=args.top):
+                print(f"{phrase}\t{probability:.4f}")
+        elif args.command == "import-govinfo":
+            from .govinfo import collect
+
+            saved, failed = collect(Path(args.output), args.limit, args.delay, args.period)
+            print(f"Done: saved {saved}, skipped {failed}.")
+        elif args.command == "audit":
+            from .audit import classify_title, summarize_records
+            from .forecast import load_records
+
+            records = load_records(args.input)
+            summary = summarize_records(records)
+            print(f"records: {summary['records']}")
+            print(f"counts: {summary['counts']}")
+            print(f"candidates_for_manual_review: {summary['candidates_for_manual_review']}")
+            for record in records:
+                print(f"{record['date']}\t{classify_title(record['event'])}\t{record['speech_id']}\t{record['event']}")
+        elif args.command == "llm":
+            from .hybrid import combine_candidate_mass
+            from .llm import CausalLM
+
+            model = CausalLM(args.model, download_retries=args.download_retries, download_timeout=args.download_timeout)
+            print("Top next-token pieces (probability in the full vocabulary):")
+            for piece, probability in model.next_tokens(args.prefix, top=10):
+                print(f"{piece!r}\t{probability:.5f}")
+            candidates = model.generate_candidates(args.prefix, count=args.candidates, max_new_tokens=args.tokens)
+            print("Top next-token candidate mass (normalized only over generated candidates):")
+            for token, probability in combine_candidate_mass(candidates, {"llm": 1.0}):
+                print(f"{token!r}\t{probability:.5f}")
+        elif args.command == "ncm-generate":
+            from .ncm import NCMGenerator
+
+            model = NCMGenerator(download_retries=args.download_retries, download_timeout=args.download_timeout)
+            for index, text in enumerate(model.generate(count=args.count), 1):
+                print(f"candidate {index}: {text}")
+        elif args.command == "hybrid-train":
+            from .hybrid_train import train_hybrid
+
+            result = train_hybrid(
+                args.input,
+                args.output,
+                epochs=args.epochs,
+                batch_size=args.batch_size,
+                stride=args.stride,
+                device_name=args.device,
+                max_steps=args.max_steps,
+            )
+            print(f"Saved SpeechPlan-H checkpoint: {result['output']}")
+        elif args.command == "hybrid":
+            from .hybrid_train import generate_hybrid
+
+            print(generate_hybrid(args.model, args.prefix, max_new_tokens=args.tokens, device_name=args.device))
+        elif args.command == "pretrained-hybrid":
+            from .hybrid_model import LLMNCMHybrid
+            from .llm import CausalLM
+            from .ncm import NCMGenerator
+
+            llm = CausalLM(download_retries=args.download_retries, download_timeout=args.download_timeout)
+            ncm = NCMGenerator(download_retries=args.download_retries, download_timeout=args.download_timeout)
+            model = LLMNCMHybrid(llm, ncm)
+            candidates, mass = model.predict(
+                args.prefix,
+                llm_count=args.llm_candidates,
+                ncm_count=args.ncm_candidates,
+                weights={"llm": args.llm_weight, "ncm": args.ncm_weight},
+            )
+            print("Combined first-token candidate mass (finite pool; uncalibrated):")
+            for token, probability in mass[:10]:
+                print(f"{token!r}\t{probability:.5f}")
+            print("Candidate scores (mean log-likelihood; incomparable units):")
+            for candidate in candidates:
+                print(f"LLM={candidate.scores['llm']:.4f} NCM={candidate.scores['ncm']:.4f}\t{candidate.text}")
+        return 0
+    except (OSError, RuntimeError, ValueError, KeyError, ImportError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
