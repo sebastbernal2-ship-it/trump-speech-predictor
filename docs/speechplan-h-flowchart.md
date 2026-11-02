@@ -1,6 +1,6 @@
 # SpeechPlan-H architecture flowchart
 
-This page shows the model that was trained on the long-speech cohort. It is a small model trained from scratch: its decoder uses GPT-2 architecture, but it does **not** load GPT-2 weights or Stanford NCM weights.
+This page documents SpeechPlan-H as implemented in `speechprefix/hybrid_nn.py`. It is trained from scratch: its decoder uses GPT-2 architecture, but it does **not** load GPT-2 weights or Stanford NCM weights.
 
 ## Prediction: observed text to next-token continuation
 
@@ -50,7 +50,7 @@ flowchart TD
 
 The plan is computed from the prefix and held fixed while the decoder generates one segment. Each of the four levels has a 128-entry codebook. Within a level, slot predictions are parallel; each finer level is conditioned on the coarser level. The 53 plan slots are learned latent vectors, not 53 words or named concepts. Training uses soft code distributions so gradients can flow; inference selects the highest-scoring code at each slot.
 
-When a question or evidence input is absent, the model receives an empty-channel sentinel. In the long-speech run, the question and evidence channels contained no real question or evidence.
+When question or evidence is omitted, the model supplies an empty-channel sentinel. The architecture supports these channels, but whether they contain real data depends on the training example and task.
 
 ## Training: how the planner learns what codes to predict
 
@@ -83,7 +83,7 @@ flowchart LR
     DECLOSS --> TOTAL
 ```
 
-The implemented objective is `token loss + 0.25 × code-prediction loss + 0.05 × vector-quantization loss`. For the trained speech model, the vocabulary cap is 20,000, context length is 128 tokens, target length is 32 tokens, and the decoder has 4 layers, width 128, and 4 attention heads. The target encoder and quantizer create supervision; at prediction time, the planner must predict the codes from the observed prefix alone.
+The implemented objective is `token loss + 0.25 × code-prediction loss + 0.05 × vector-quantization loss`. The current training configuration uses a 20,000-token vocabulary cap, 128-token context, 32-token target, and a 4-layer decoder with width 128 and 4 attention heads. The target encoder and quantizer create supervision; at prediction time, the planner must predict the codes from the observed prefix alone.
 
 ## Words, phrases, ideas, and “concepts”
 
