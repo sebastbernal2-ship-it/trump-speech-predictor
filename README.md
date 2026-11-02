@@ -30,6 +30,8 @@ python3 -m speechprefix stream --model model.json
 python3 -m speechprefix evaluate --input data/speeches.jsonl
 python3 -m speechprefix forecast --input data/speeches.jsonl
 python3 -m speechprefix audit --input data/speeches.jsonl
+.venv/bin/python -m speechprefix segment --input data/speeches.jsonl
+.venv/bin/python -m speechprefix context-fetch --as-of 2026-09-30 --query "artificial intelligence"
 ```
 
 The GovInfo importer reads `GOVINFO_API_KEY` from the current environment or a repo-root `.env` file. It downloads at most 25 speech-like CPD documents per run by default, only for Trump's presidential periods, and appends them to ignored `data/speeches.jsonl`. Use `--period 2017` or `--period 2025` to target a term. Increase `--limit` deliberately after checking the first batch. The filter is title-based and will miss some remarks and include some non-speech records; review the resulting records and applicable reuse terms before training.
@@ -42,6 +44,8 @@ In stream mode, submit each new chunk on its own line. A blank line exits. For S
 ```
 
 The older `pretrained-hybrid` command is only a candidate-fusion comparison baseline; it may use external checkpoints. SpeechPlan-H's architecture and known limits are described in `docs/speechplan-hybrid.md`.
+
+`segment` splits transcript paragraphs and labels only explicit speaker prefixes; it leaves unmarked text unattributed and links explicit questions to subsequent president-labeled turns provisionally. `context-fetch` calls the public Federal Register API without an API key, stores titles/abstracts and source dates locally, and rejects documents published after `--as-of`. This builds a context data source only; SpeechPlan-H does not consume external evidence yet. Current counts and limitations are in `docs/data-audit.md`.
 
 ## Two tasks, two evaluations
 

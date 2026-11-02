@@ -8,6 +8,8 @@ dist/
 model.json
 *.model.json
 data/speeches.jsonl
+data/segments.jsonl
+data/world_context.jsonl
 checkpoints/
 .DS_Store
 

@@ -1,16 +1,22 @@
-# GovInfo sample audit
+# Local data audit
 
-The local ignored sample contains 51 unique CPD records. It spans Jan 2017 to Sep 2026, with an uneven, title-filtered sample: 25 records from Sep 2026, one from May 2025, and 25 records from Jan 2017 through Sep 2020. It is not a representative or complete corpus.
+The current ignored GovInfo sample contains 1,019 CPD records dated 2017-01-20 through 2026-09-30. It is title-filtered, uneven, and contains mixed presidential documents rather than a verified speech-only corpus.
 
-A title-only classifier reports 5 `formal_address`, 15 `event_remarks`, 21 `remarks_plus_press`, 4 `press_interaction`, 6 `written_statement`, and 0 `other` records.
+Current title-based provisional counts:
 
-- `formal_address`: titles containing "address" or the United Nations General Assembly.
-- `event_remarks`: titles mentioning remarks, without a reporter-exchange marker.
-- `remarks_plus_press`: remarks titles that also mention an exchange with reporters.
-- `press_interaction`: news conferences and reporter-focused titles.
-- `written_statement`: titles beginning with "Statement" or "Joint Statement".
-- `other`: titles that do not match the above.
+- `formal_address`: 76
+- `written_statement`: 130
+- `event_remarks`: 432
+- `remarks_plus_press`: 329
+- `press_interaction`: 40
+- `other`: 12
 
-Run `python3 -m speechprefix audit --input data/speeches.jsonl` to review each title and category. These labels are heuristics only. A long reporter exchange is not necessarily a prepared speech, and a short title may still correspond to substantial remarks. The full documents must be reviewed before calling a record a complete speech or including it in a clean speech benchmark.
+The local paragraph segmenter produced 101,650 segments. It identified 10,900 explicit `Q.` question turns, 9,471 president-labeled turns linked to a preceding explicit question, 9,129 president-labeled remarks, and 2,787 other labeled turns. The remaining 69,363 segments have no recognized leading speaker label and remain unattributed. These are heuristic labels, not human verification; question-response links are provisional.
 
-The source sample is imbalanced by time because collection was bounded in separate runs. Do not use it for meaningful train/test claims. The current n-gram test score is a smoke test on the last chronologically sorted document, not a credible estimate of model performance.
+The segmenter trusts explicit leading labels such as `Q.` and `The President.`. It does not call every sentence with a question mark a reporter question. Review `unattributed_text` and response links before using them as supervised Q&A examples.
+
+A no-key [Federal Register API](https://www.federalregister.gov/developers/documentation/api/v1) connector stores document metadata and abstracts in ignored `data/world_context.jsonl`. The initial local query retrieved 10 documents matching `artificial intelligence`, with a publication cutoff of 2026-09-30 and a 90-day lookback. This is a connector smoke test, not a context set paired to speech targets. Use the question or topic known at prediction time as the query, and keep all retrieved publication dates at or before the prediction timestamp.
+
+Run `speechprefix audit --input data/speeches.jsonl` for title review, `speechprefix segment` for paragraph labels, and `speechprefix context-fetch --as-of DATE --query TOPIC` for time-bounded Federal Register context. The text corpus, generated segments, world-context records, and model checkpoint remain local/ignored. Review source-specific reuse terms before expanding any collection.
+
+Do not use the current sample for representative train/test claims. The split is chronological by date, but the corpus has not been manually reviewed for completeness, duplicates, Q&A attribution, or transcript rights.

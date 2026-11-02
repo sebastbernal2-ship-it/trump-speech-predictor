@@ -54,6 +54,17 @@ def main(argv: list[str] | None = None) -> int:
     audit = sub.add_parser("audit", help="summarize imported record types without reading transcript bodies")
     audit.add_argument("--input", required=True, help="JSONL speech records")
 
+    segment = sub.add_parser("segment", help="split transcripts and classify explicit speaker turns")
+    segment.add_argument("--input", default="data/speeches.jsonl")
+    segment.add_argument("--output", default="data/segments.jsonl")
+
+    context = sub.add_parser("context-fetch", help="fetch time-bounded Federal Register context (no API key)")
+    context.add_argument("--as-of", required=True, help="latest allowed publication date, YYYY-MM-DD")
+    context.add_argument("--query", required=True, help="question or topic known at prediction time")
+    context.add_argument("--lookback-days", type=int, default=30)
+    context.add_argument("--limit", type=int, default=10)
+    context.add_argument("--output", default="data/world_context.jsonl")
+
     llm = sub.add_parser("llm", help="run a Hugging Face causal-LM continuation baseline")
     llm.add_argument("--model", default="openai-community/gpt2")
     llm.add_argument("--prefix", required=True)
@@ -139,6 +150,28 @@ def main(argv: list[str] | None = None) -> int:
             print(f"candidates_for_manual_review: {summary['candidates_for_manual_review']}")
             for record in records:
                 print(f"{record['date']}\t{classify_title(record['event'])}\t{record['speech_id']}\t{record['event']}")
+        elif args.command == "segment":
+            from collections import Counter
+            import json
+            from .forecast import load_records
+            from .segments import segment_records
+
+            records = load_records(args.input)
+            output = Path(args.output)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            counts = Counter()
+            with output.open("w", encoding="utf-8") as stream:
+                for segment_record in segment_records(records):
+                    counts[segment_record["segment_type"]] += 1
+                    stream.write(json.dumps(segment_record, ensure_ascii=False) + "\n")
+            print(f"Wrote {sum(counts.values())} segments from {len(records)} records to {output}.")
+            print(f"segment_types: {dict(sorted(counts.items()))}")
+        elif args.command == "context-fetch":
+            from .federalregister import append_context, search_documents
+
+            records = search_documents(args.as_of, args.query, args.limit, args.lookback_days)
+            added = append_context(args.output, records)
+            print(f"Found {len(records)} pre-event documents; appended {added} new records to {args.output}.")
         elif args.command == "llm":
             from .hybrid import combine_candidate_mass
             from .llm import CausalLM
