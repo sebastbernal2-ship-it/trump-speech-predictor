@@ -12,6 +12,7 @@ data/segments.jsonl
 data/world_context.jsonl
 data/evidence_pairs.jsonl
 data/qa_review.csv
+data/events.jsonl
 checkpoints/
 .DS_Store
 

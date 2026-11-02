@@ -54,9 +54,14 @@ def main(argv: list[str] | None = None) -> int:
     audit = sub.add_parser("audit", help="summarize imported record types without reading transcript bodies")
     audit.add_argument("--input", required=True, help="JSONL speech records")
 
-    segment = sub.add_parser("segment", help="split transcripts and classify explicit speaker turns")
+    segment = sub.add_parser("segment", help="split legacy paragraph transcripts and classify explicit speaker turns")
     segment.add_argument("--input", default="data/speeches.jsonl")
     segment.add_argument("--output", default="data/segments.jsonl")
+
+    turn_import = sub.add_parser("turn-import", help="import a time-coded transcript page and its event metadata")
+    turn_import.add_argument("--transcript", required=True, help="saved page text with a Full Transcript section")
+    turn_import.add_argument("--metadata", required=True, help="JSON event metadata and optional reviewed prediction annotations")
+    turn_import.add_argument("--output", default="data/events.jsonl")
 
     context = sub.add_parser("context-fetch", help="fetch time-bounded Federal Register context (no API key)")
     context.add_argument("--as-of", required=True, help="prediction date; same-day records are excluded, YYYY-MM-DD")
@@ -170,6 +175,18 @@ def main(argv: list[str] | None = None) -> int:
                     stream.write(json.dumps(segment_record, ensure_ascii=False) + "\n")
             print(f"Wrote {sum(counts.values())} segments from {len(records)} records to {output}.")
             print(f"segment_types: {dict(sorted(counts.items()))}")
+        elif args.command == "turn-import":
+            import json
+            from .events import add_prediction_examples, append_event, parse_timestamped_transcript
+
+            metadata = json.loads(Path(args.metadata).read_text(encoding="utf-8"))
+            event = parse_timestamped_transcript(
+                Path(args.transcript).read_text(encoding="utf-8"), metadata
+            )
+            annotations = metadata.get("prediction_annotations", [])
+            event = add_prediction_examples(event, annotations)
+            append_event(args.output, event)
+            print(f"Appended {len(event['turns'])} timestamped turns for {event['event_id']} to {args.output}.")
         elif args.command == "context-fetch":
             from .federalregister import append_context, search_documents
 
