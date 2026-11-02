@@ -1,25 +1,42 @@
 # SpeechPlan-H
 
-SpeechPlan-H is a new, from-scratch continuation model in this repository. It does not load GPT-2 weights, Stanford NCM weights, or any downloaded model checkpoint. It uses the installed Transformers GPT-2 implementation only as a randomly initialized autoregressive decoder. Its architecture combines:
+SpeechPlan-H is a from-scratch, word-level model. It does not load GPT-2 or Stanford NCM weights. It uses the installed Transformers GPT-2 implementation only as a randomly initialized autoregressive decoder.
 
-1. A context encoder that summarizes the observed prefix.
-2. A training-only future encoder and residual vector quantizer. It learns discrete codebooks at 1, 4, 16, and 32 positions over the next 32-token segment.
-3. A coarse-to-fine planner that predicts each code level from the prefix and its preceding predicted level.
-4. A GPT-style token decoder with cross-attention to all planned code embeddings. It also reads the observed prefix through causal self-attention.
+## Inputs and architecture
 
-Training jointly minimizes next-token cross-entropy, hierarchical code-prediction cross-entropy, and vector-quantizer reconstruction/commitment loss. During inference, the future encoder is absent: the planner predicts codes from the prefix, and the decoder generates the next segment conditioned on those codes.
+The model keeps three inputs separate:
 
-This is an original prototype design here, not a claim of globally novel research or equivalent scale/quality to a pretrained LLM. It starts randomly initialized and learns a word-level vocabulary from the local training split. The GovInfo corpus is mixed presidential material, not a manually verified speech set; a chronological holdout on this corpus is only a plumbing check. Do not interpret its scores as representative speech quality.
+- **Transcript prefix:** observed transcript text before the target. A context encoder summarizes it; the decoder also reads it through causal self-attention.
+- **Question:** an explicit reporter question, encoded in its own channel.
+- **Evidence:** dated, source-attributed text retrieved as of the prediction time. This channel is optional and is accepted only for checkpoints trained with question-linked evidence pairs.
 
-The initial 5-epoch local run used 89,443/18,729/15,271 train/validation/test chunks and selected the checkpoint by validation loss. The 6.78M-parameter model reached test token loss 4.2168 and top-1 accuracy 0.3320 on this split. Qualitative samples remain repetitive and sometimes reproduce editorial notes, so this is evidence that training/inference works, not that the model is useful. The checkpoint is local and git-ignored at `checkpoints/speechplan-h.pt`.
+The NCM-like planner combines summaries from those channels and predicts coarse-to-fine residual VQ codes for the next segment. The GPT-style decoder cross-attends to question/evidence memory and the predicted plan codes. A training-only future encoder and residual vector quantizer learn discrete codes at 1, 4, 16, and 32 positions over a 32-token target.
 
-Train locally, with no model download:
+Training mixes ordinary continuation chunks with explicit question-to-president response chunks. The sampler balances the two tasks. The chronological split is by whole calendar dates. For question-conditioned test examples, evaluation reports combined, transcript-only, and question-only results separately. If paired evidence is present, it also compares combined inputs with and without evidence. These are still teacher-forced 32-token window metrics, not a live turn-taking evaluation.
+
+Question-response links are heuristic, not human-verified. Only explicit `Q.` turns with a question mark or recognized interrogative opening enter strict Q&A training. Short answers that do not fill one target window are omitted. See `docs/data-audit.md` for current counts and known labeling errors.
+
+## External evidence
+
+The Federal Register fetcher supplies dated metadata and abstracts without an API key. Retrieved documents are not joined to questions automatically. To train on evidence, provide JSONL rows keyed by `question_segment_id` as defined in `CONTEXT.md`; training rejects missing, invalid, same-day, or later publication dates because transcript timestamps are unavailable. At generation, use `--as-of` with an optional `--context-query`; evidence is rejected unless the checkpoint's training metadata records evidence pairs. The current local Federal Register sample is unpaired, so current checkpoints do not use it. Evidence input does not guarantee factual grounding, and generated text has no citation head; claim-level accuracy must be evaluated separately.
+
+## Training and generation
 
 ```sh
 .venv/bin/python -m speechprefix hybrid-train \
   --input data/speeches.jsonl --output checkpoints/speechplan-h.pt --epochs 1
 .venv/bin/python -m speechprefix hybrid \
-  --model checkpoints/speechplan-h.pt --prefix "Ladies and gentlemen, thank you"
+  --model checkpoints/speechplan-h.pt \
+  --prefix "We have been discussing our plans" \
+  --question "What is the plan?"
 ```
 
-`hybrid-train --max-steps 2` caps optimizer steps for a smoke run; it still computes validation and test metrics, which are not meaningful from such a partial run. The trainer splits whole calendar dates chronologically and selects the checkpoint by validation loss. Pre-speech forecasting remains a separate task and is not an input to this continuation model.
+Use `--max-steps` only for plumbing checks. The old format-1 checkpoint remains loadable for ordinary continuation but predates question conditioning; retrain before using `--question`.
+
+## Limits and prior run
+
+The GovInfo corpus contains mixed presidential documents, not a manually verified speech set. Its current data and heuristic Q&A labels do not support representative quality claims. Model scores are uncalibrated.
+
+The earlier format-1 experiment used a 6.78M-parameter model for five epochs on the then-current corpus and reached test token loss 4.2168 and top-1 accuracy 0.3320. Samples were repetitive and sometimes reproduced editorial notes. Those historical metrics do not evaluate question conditioning or external evidence.
+
+The first format-2 run trained for one epoch on the current mixed corpus: 89,443/18,729/15,271 continuation chunks and 2,794/533/437 Q&A chunks across train/validation/test. Test continuation loss/top-1 were 4.9272/0.2704. On the same Q&A targets, combined transcript+question scored 4.3369/0.2431, transcript-only 3.9996/0.2574, and question-only 4.8784/0.1869. No evidence pairs were used, so combined and no-evidence results are identical. This run does not show a question-conditioning benefit; generated text remains poor. The format-2 checkpoint is local and git-ignored.

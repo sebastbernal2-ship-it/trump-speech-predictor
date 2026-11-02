@@ -27,8 +27,8 @@ def search_documents(as_of: str, query: str, limit: int = 10, lookback_days: int
         "per_page": min(limit, 20),
         "order": "newest",
         "conditions[term]": query.strip(),
-        "conditions[publication_date][gte]": (cutoff - timedelta(days=lookback_days - 1)).isoformat(),
-        "conditions[publication_date][lte]": cutoff.isoformat(),
+        "conditions[publication_date][gte]": (cutoff - timedelta(days=lookback_days)).isoformat(),
+        "conditions[publication_date][lte]": (cutoff - timedelta(days=1)).isoformat(),
         "fields[]": FIELDS,
     }
     matches = []
@@ -47,7 +47,7 @@ def search_documents(as_of: str, query: str, limit: int = 10, lookback_days: int
 
         for item in payload.get("results", []):
             published = item.get("publication_date", "")
-            if not published or published > cutoff.isoformat():
+            if not published or published >= cutoff.isoformat():
                 continue
             agencies = [agency.get("name", "") for agency in item.get("agencies", [])]
             matches.append({
@@ -93,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(description="Search the no-key Federal Register API for pre-event context")
-    parser.add_argument("--as-of", required=True, help="latest allowed publication date (YYYY-MM-DD)")
+    parser.add_argument("--as-of", required=True, help="prediction date; same-day documents are excluded (YYYY-MM-DD)")
     parser.add_argument("--query", required=True, help="question or topic known at prediction time")
     parser.add_argument("--lookback-days", type=int, default=30)
     parser.add_argument("--limit", type=int, default=10)

@@ -40,12 +40,12 @@ In stream mode, submit each new chunk on its own line. A blank line exits. For S
 
 ```sh
 .venv/bin/python -m speechprefix hybrid-train --input data/speeches.jsonl --output checkpoints/speechplan-h.pt --epochs 1
-.venv/bin/python -m speechprefix hybrid --model checkpoints/speechplan-h.pt --prefix "Ladies and gentlemen, thank you"
+.venv/bin/python -m speechprefix hybrid --model checkpoints/speechplan-h.pt --prefix "We have been discussing our plans" --question "What is the plan?"
 ```
 
 The older `pretrained-hybrid` command is only a candidate-fusion comparison baseline; it may use external checkpoints. SpeechPlan-H's architecture and known limits are described in `docs/speechplan-hybrid.md`.
 
-`segment` splits transcript paragraphs and labels only explicit speaker prefixes; it leaves unmarked text unattributed and links explicit questions to subsequent president-labeled turns provisionally. `context-fetch` calls the public Federal Register API without an API key, stores titles/abstracts and source dates locally, and rejects documents published after `--as-of`. This builds a context data source only; SpeechPlan-H does not consume external evidence yet. Current counts and limitations are in `docs/data-audit.md`.
+`segment` splits transcript paragraphs, distinguishes explicit questions from reporter floor prompts, and links likely president responses in transcript order. Those links are heuristic; unmarked text stays unattributed. SpeechPlan-H trains separate transcript and question channels and reports Q&A results apart from ordinary continuation. Add `--question` at generation time after training a new checkpoint. `context-fetch` calls the public Federal Register API without an API key and stores dated titles/abstracts locally; it excludes documents published on the prediction date because transcript event times are unavailable. External evidence is accepted only when the checkpoint was trained with dated, question-linked evidence pairs; see the JSONL schema in `CONTEXT.md`. The current Federal Register sample is unpaired, so it is not yet model input. Current counts and limitations are in `docs/data-audit.md`.
 
 ## Two tasks, two evaluations
 

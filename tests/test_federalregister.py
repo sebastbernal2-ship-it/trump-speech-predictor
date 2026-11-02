@@ -9,12 +9,14 @@ from speechprefix.federalregister import append_context, search_documents
 
 
 class FederalRegisterTests(unittest.TestCase):
-    def test_search_is_keyless_and_drops_future_dated_results(self):
+    def test_search_is_keyless_and_excludes_same_day_and_future_results(self):
         payload = {
             "results": [
-                {"document_number": "2025-001", "publication_date": "2025-04-10", "title": "Earlier",
+                {"document_number": "2025-001", "publication_date": "2025-04-09", "title": "Earlier",
                  "abstract": "Relevant abstract", "html_url": "https://example.test/1", "type": "RULE",
                  "agencies": [{"name": "Example Agency"}]},
+                {"document_number": "2025-003", "publication_date": "2025-04-10", "title": "Same day",
+                 "abstract": "Not safe without event time", "html_url": "https://example.test/3", "type": "RULE", "agencies": []},
                 {"document_number": "2025-002", "publication_date": "2025-04-12", "title": "Future",
                  "abstract": "Not available yet", "html_url": "https://example.test/2", "type": "RULE", "agencies": []},
             ]
@@ -29,7 +31,7 @@ class FederalRegisterTests(unittest.TestCase):
             records = search_documents("2025-04-10", "energy", limit=2, lookback_days=30)
         self.assertEqual([record["context_id"] for record in records], ["2025-001"])
         self.assertNotIn("api_key", seen[0])
-        self.assertIn("conditions%5Bpublication_date%5D%5Blte%5D=2025-04-10", seen[0])
+        self.assertIn("conditions%5Bpublication_date%5D%5Blte%5D=2025-04-09", seen[0])
 
     def test_append_is_idempotent_by_document_number(self):
         with tempfile.TemporaryDirectory() as directory:

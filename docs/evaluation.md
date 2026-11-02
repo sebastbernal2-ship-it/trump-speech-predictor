@@ -8,7 +8,17 @@
 - Assess calibration with reliability plots and Brier score (or an explicitly defined multiclass equivalent) before describing probabilities as confidence.
 - Compare to simple frequency/n-gram baselines before testing larger models.
 
-SpeechPlan-H currently creates non-overlapping 32-token target chunks with 128-token preceding contexts, split by whole calendar dates. Its reported test loss/top-1 are teacher-forced chunk metrics; they do not establish sequential online quality, calibration, or broad speech coverage. The current corpus contains mixed presidential documents, not a reviewed speech-only set. The n-gram CLI evaluator is separately minimal: it trains on all but the final record and scores that record. Both are prototype checks, not complete research protocols.
+SpeechPlan-H continuation metrics use teacher-forced target windows and do not establish sequential online quality, calibration, or broad speech coverage. The current corpus contains mixed presidential documents, not a reviewed speech-only set. The n-gram CLI evaluator is separately minimal: it trains on all but the final record and scores that record. Both are prototype checks, not complete research protocols.
+
+## Question-conditioned responses
+
+- Keep this task distinct from ordinary continuation and before-speech forecasting.
+- Use only explicit question-to-president links from the paragraph segmenter; treat them as noisy candidates until manually reviewed.
+- Split by whole calendar dates before creating examples. Keep each response and its preceding transcript context in the same speech split.
+- Report matched-target metrics for combined transcript+question, transcript-only, and question-only conditions.
+- If dated evidence is trained, also compare combined inputs with and without evidence; keep those results distinct from question-only results.
+- Use external evidence only when each item has a source and publication date strictly earlier than the question's transcript date. Same-day evidence is excluded because the corpus has no event timestamps. Do not attach evidence by topic after seeing the response.
+- Report evidence-conditioned results separately from question-only results. Evaluate factual support and source attribution separately; the current decoder does not emit citations. The current Federal Register sample is not paired to Q&A and cannot support an evidence-conditioned claim.
 
 ## Pre-speech forecasting
 

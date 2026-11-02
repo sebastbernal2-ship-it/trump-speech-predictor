@@ -10,6 +10,7 @@ model.json
 data/speeches.jsonl
 data/segments.jsonl
 data/world_context.jsonl
+data/evidence_pairs.jsonl
 checkpoints/
 .DS_Store
 

@@ -11,12 +11,21 @@ Current title-based provisional counts:
 - `press_interaction`: 40
 - `other`: 12
 
-The local paragraph segmenter produced 101,650 segments. It identified 10,900 explicit `Q.` question turns, 9,471 president-labeled turns linked to a preceding explicit question, 9,129 president-labeled remarks, and 2,787 other labeled turns. The remaining 69,363 segments have no recognized leading speaker label and remain unattributed. These are heuristic labels, not human verification; question-response links are provisional.
+The paragraph segmenter produced 101,650 segments:
 
-The segmenter trusts explicit leading labels such as `Q.` and `The President.`. It does not call every sentence with a question mark a reporter question. Review `unattributed_text` and response links before using them as supervised Q&A examples.
+- 6,454 explicit `Q.` turns classified as questions.
+- 4,446 explicit `Q.` turns classified as reporter prompts, not strict questions.
+- 5,816 president-labeled answer paragraphs linked to a preceding strict question.
+- 3,655 president-labeled responses linked to reporter prompts.
+- 9,129 president-labeled remarks and 2,787 other labeled turns.
+- 69,363 segments remain unattributed.
 
-A no-key [Federal Register API](https://www.federalregister.gov/developers/documentation/api/v1) connector stores document metadata and abstracts in ignored `data/world_context.jsonl`. The initial local query retrieved 10 documents matching `artificial intelligence`, with a publication cutoff of 2026-09-30 and a 90-day lookback. This is a connector smoke test, not a context set paired to speech targets. Use the question or topic known at prediction time as the query, and keep all retrieved publication dates at or before the prediction timestamp.
+Question classification requires an explicit `Q.` label and either a question mark or a recognized interrogative opening. The response link is based on transcript order and remains heuristic. A spot-check found clipped questions, clarifications, and floor-management turns among the linked examples; do not treat the full set as verified semantic Q&A.
 
-Run `speechprefix audit --input data/speeches.jsonl` for title review, `speechprefix segment` for paragraph labels, and `speechprefix context-fetch --as-of DATE --query TOPIC` for time-bounded Federal Register context. The text corpus, generated segments, world-context records, and model checkpoint remain local/ignored. Review source-specific reuse terms before expanding any collection.
+The question-conditioned trainer uses full 32-token answer windows. On the current chronological date split, it produces 2,794 training, 533 validation, and 437 test windows. Shorter answers are omitted from this first pass. The evaluation reports question+transcript, transcript-only, and question-only metrics separately from ordinary continuation.
 
-Do not use the current sample for representative train/test claims. The split is chronological by date, but the corpus has not been manually reviewed for completeness, duplicates, Q&A attribution, or transcript rights.
+A no-key [Federal Register API](https://www.federalregister.gov/developers/documentation/api/v1) connector stores document metadata and abstracts in ignored `data/world_context.jsonl`. The initial query retrieved 10 documents matching `artificial intelligence`, with a nominal cutoff of 2026-09-30 and a 90-day lookback. That first connector snapshot included same-day records; it is unpaired and must not be used for predictions dated 2026-09-30. The fetcher now excludes same-day records, and training/inference reject evidence not published strictly before the prediction date. The model refuses external evidence until dated evidence pairs are included in training.
+
+Run `speechprefix audit --input data/speeches.jsonl` for title review, `speechprefix segment` to regenerate paragraph labels, and `speechprefix context-fetch --as-of DATE --query TOPIC` for time-bounded Federal Register context. The corpus, generated segments, world-context records, evidence-pair files, and checkpoints remain local/ignored. Review source-specific reuse terms before expanding collection or training.
+
+Do not use this sample for representative train/test claims. The corpus has not been manually reviewed for completeness, duplicates, Q&A attribution, or transcript rights.

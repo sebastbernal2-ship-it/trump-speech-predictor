@@ -26,13 +26,20 @@ class SpeechPlanConfig:
     dropout: float = 0.1
     ncm_weight: float = 0.25
     vq_weight: float = 0.05
+    question_length: int = 64
+    evidence_length: int = 128
+    question_empty_id: int = 4
+    evidence_empty_id: int = 5
 
     def __post_init__(self):
-        if self.vocab_size < 4 or self.width < 1 or self.heads < 1 or self.width % self.heads:
+        if self.vocab_size < 6 or self.width < 1 or self.heads < 1 or self.width % self.heads:
             raise ValueError("invalid vocabulary size or transformer dimensions")
-        if any(token_id < 0 or token_id >= self.vocab_size for token_id in (self.pad_id, self.bos_id, self.eos_id)):
+        special_ids = (self.pad_id, self.bos_id, self.eos_id, self.question_empty_id, self.evidence_empty_id)
+        if any(token_id < 0 or token_id >= self.vocab_size for token_id in special_ids):
             raise ValueError("special token IDs must be within the vocabulary")
-        if self.context_length < 1 or self.target_length < 1 or self.layers < 1:
+        if len(set(special_ids)) != len(special_ids):
+            raise ValueError("special token IDs must be distinct")
+        if min(self.context_length, self.target_length, self.question_length, self.evidence_length, self.layers) < 1:
             raise ValueError("sequence lengths and layer count must be positive")
         if self.codebook_size < 2 or not self.levels or self.levels[-1] != self.target_length:
             raise ValueError("hierarchy must end at the target length")
@@ -91,6 +98,12 @@ class SpeechPlanHybrid(nn.Module):
         width = config.width
         self.token_embedding = nn.Embedding(config.vocab_size, width, padding_idx=config.pad_id)
         self.context_position = nn.Embedding(config.context_length, width)
+        self.question_position = nn.Embedding(config.question_length, width)
+        self.evidence_position = nn.Embedding(config.evidence_length, width)
+        self.channel_embeddings = nn.Embedding(2, width)
+        self.question_summary_projection = nn.Linear(width, width, bias=False)
+        self.evidence_summary_projection = nn.Linear(width, width, bias=False)
+        self.question_channel_enabled = True
         self.target_position = nn.Embedding(config.target_length, width)
         encoder_layer = nn.TransformerEncoderLayer(
             width, config.heads, 4 * width, config.dropout,
@@ -134,14 +147,63 @@ class SpeechPlanHybrid(nn.Module):
         )
         self.decoder = GPT2LMHeadModel(decoder_config)
 
-    def _context(self, prefix_ids: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        mask = prefix_ids.ne(self.config.pad_id)
+    def _summary(self, hidden: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        positions = torch.arange(mask.shape[1], device=mask.device).expand_as(mask)
+        last = positions.masked_fill(~mask, -1).amax(dim=1).clamp_min(0)
+        return hidden[torch.arange(hidden.shape[0], device=hidden.device), last]
+
+    def _encode_auxiliary(
+        self, ids: torch.Tensor | None, *, length: int, empty_id: int, position: nn.Embedding, channel: int,
+        batch_size: int, device: torch.device,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if ids is None:
+            ids = torch.full((batch_size, length), self.config.pad_id, dtype=torch.long, device=device)
+            ids[:, 0] = empty_id
+        if ids.ndim != 2 or ids.shape[0] != batch_size or ids.shape[1] < 1:
+            raise ValueError("auxiliary input must be a nonempty batch of token sequences")
+        if ids.shape[1] > length:
+            raise ValueError("auxiliary input exceeds its configured length")
+        mask = ids.ne(self.config.pad_id)
+        empty_rows = ~mask.any(dim=1)
+        if empty_rows.any():
+            ids = ids.clone()
+            ids[empty_rows, 0] = empty_id
+            mask = ids.ne(self.config.pad_id)
+        positions = torch.arange(ids.shape[1], device=ids.device)
+        embedded = (
+            self.token_embedding(ids) + position(positions)[None, :, :]
+            + self.channel_embeddings.weight[channel]
+        )
+        hidden = self.context_encoder(embedded, src_key_padding_mask=~mask)
+        return hidden, mask, self._summary(hidden, mask)
+
+    def _context(
+        self, prefix_ids: torch.Tensor, question_ids: torch.Tensor | None = None,
+        evidence_ids: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        prefix_mask = prefix_ids.ne(self.config.pad_id)
         positions = torch.arange(prefix_ids.shape[1], device=prefix_ids.device)
         embedded = self.token_embedding(prefix_ids) + self.context_position(positions)[None, :, :]
-        hidden = self.context_encoder(embedded, src_key_padding_mask=~mask)
-        last = mask.long().sum(dim=1).sub(1).clamp_min(0)
-        summary = hidden[torch.arange(hidden.shape[0], device=hidden.device), last]
-        return hidden, summary
+        prefix_hidden = self.context_encoder(embedded, src_key_padding_mask=~prefix_mask)
+        summary = self._summary(prefix_hidden, prefix_mask)
+        if not self.question_channel_enabled:
+            empty_memory = prefix_hidden[:, :0]
+            empty_mask = prefix_mask[:, :0]
+            return summary, empty_memory, empty_mask
+
+        question, question_mask, question_summary = self._encode_auxiliary(
+            question_ids, length=self.config.question_length, empty_id=self.config.question_empty_id,
+            position=self.question_position, channel=0, batch_size=prefix_ids.shape[0], device=prefix_ids.device,
+        )
+        evidence, evidence_mask, evidence_summary = self._encode_auxiliary(
+            evidence_ids, length=self.config.evidence_length, empty_id=self.config.evidence_empty_id,
+            position=self.evidence_position, channel=1, batch_size=prefix_ids.shape[0], device=prefix_ids.device,
+        )
+        summary = (
+            summary + self.question_summary_projection(self._summary(question, question_mask))
+            + self.evidence_summary_projection(self._summary(evidence, evidence_mask))
+        )
+        return summary, torch.cat((question, evidence), dim=1), torch.cat((question_mask, evidence_mask), dim=1)
 
     def _plan(
         self, summary: torch.Tensor, hard: bool
@@ -174,8 +236,11 @@ class SpeechPlanHybrid(nn.Module):
             previous = embeddings
         return code_logits, torch.cat(memory_levels, dim=1)
 
-    def forward(self, prefix_ids: torch.Tensor, target_ids: torch.Tensor) -> dict[str, torch.Tensor]:
-        _, summary = self._context(prefix_ids)
+    def forward(
+        self, prefix_ids: torch.Tensor, target_ids: torch.Tensor,
+        question_ids: torch.Tensor | None = None, evidence_ids: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        summary, auxiliary_memory, auxiliary_mask = self._context(prefix_ids, question_ids, evidence_ids)
         target_positions = torch.arange(target_ids.shape[1], device=target_ids.device)
         target_embedded = self.token_embedding(target_ids) + self.target_position(target_positions)[None, :, :]
         target_hidden = self.target_encoder(target_embedded)
@@ -192,11 +257,13 @@ class SpeechPlanHybrid(nn.Module):
         decoder_input = torch.cat([prefix_ids, decoder_tokens], dim=1)
         decoder_mask = decoder_input.ne(self.config.pad_id).long()
         plan_mask = torch.ones(plan_memory.shape[:2], dtype=decoder_mask.dtype, device=decoder_mask.device)
+        encoder_memory = torch.cat((auxiliary_memory, plan_memory), dim=1)
+        encoder_mask = torch.cat((auxiliary_mask.long(), plan_mask), dim=1)
         logits = self.decoder(
             input_ids=decoder_input,
             attention_mask=decoder_mask,
-            encoder_hidden_states=plan_memory,
-            encoder_attention_mask=plan_mask,
+            encoder_hidden_states=encoder_memory,
+            encoder_attention_mask=encoder_mask,
             logits_to_keep=self.config.target_length,
         ).logits
         token_loss = F.cross_entropy(
@@ -218,13 +285,19 @@ class SpeechPlanHybrid(nn.Module):
         max_new_tokens: int | None = None,
         temperature: float = 0.8,
         top_k: int = 40,
+        question_ids: torch.Tensor | None = None,
+        evidence_ids: torch.Tensor | None = None,
     ) -> list[int]:
         if prefix_ids.shape[0] != 1:
             raise ValueError("generation accepts one prefix at a time")
         if temperature <= 0 or top_k < 1:
             raise ValueError("temperature and top_k must be positive")
-        _, summary = self._context(prefix_ids)
+        summary, auxiliary_memory, auxiliary_mask = self._context(prefix_ids, question_ids, evidence_ids)
         _, plan_memory = self._plan(summary, hard=True)
+        encoder_memory = torch.cat((auxiliary_memory, plan_memory), dim=1)
+        encoder_mask = torch.cat((auxiliary_mask.long(), torch.ones(
+            plan_memory.shape[:2], dtype=torch.long, device=prefix_ids.device
+        )), dim=1)
         generated = torch.tensor([[self.config.bos_id]], device=prefix_ids.device)
         maximum = max_new_tokens or self.config.target_length
         for _ in range(min(maximum, self.config.target_length)):
@@ -233,8 +306,8 @@ class SpeechPlanHybrid(nn.Module):
             logits = self.decoder(
                 input_ids=decoder_input,
                 attention_mask=attention_mask,
-                encoder_hidden_states=plan_memory,
-                encoder_attention_mask=torch.ones(plan_memory.shape[:2], device=prefix_ids.device),
+                encoder_hidden_states=encoder_memory,
+                encoder_attention_mask=encoder_mask,
                 logits_to_keep=1,
             ).logits[0, -1].float() / temperature
             values, indices = torch.topk(logits, min(top_k, logits.numel()))
@@ -246,7 +319,7 @@ class SpeechPlanHybrid(nn.Module):
 
     def checkpoint(self, vocabulary: list[str]) -> dict:
         return {
-            "format": 1,
+            "format": 2,
             "config": asdict(self.config),
             "vocabulary": vocabulary,
             "state_dict": self.state_dict(),

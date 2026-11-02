@@ -59,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
     segment.add_argument("--output", default="data/segments.jsonl")
 
     context = sub.add_parser("context-fetch", help="fetch time-bounded Federal Register context (no API key)")
-    context.add_argument("--as-of", required=True, help="latest allowed publication date, YYYY-MM-DD")
+    context.add_argument("--as-of", required=True, help="prediction date; same-day records are excluded, YYYY-MM-DD")
     context.add_argument("--query", required=True, help="question or topic known at prediction time")
     context.add_argument("--lookback-days", type=int, default=30)
     context.add_argument("--limit", type=int, default=10)
@@ -86,10 +86,14 @@ def main(argv: list[str] | None = None) -> int:
     hybrid_train.add_argument("--stride", type=int, default=32)
     hybrid_train.add_argument("--device", default="auto")
     hybrid_train.add_argument("--max-steps", type=int, default=0, help="cap training steps per epoch for smoke tests")
+    hybrid_train.add_argument("--evidence-pairs", help="dated evidence mappings keyed by question segment ID")
 
     hybrid = sub.add_parser("hybrid", help="generate with a trained from-scratch SpeechPlan-H checkpoint")
     hybrid.add_argument("--model", required=True)
     hybrid.add_argument("--prefix", required=True)
+    hybrid.add_argument("--question", default="", help="explicit question to condition the response on")
+    hybrid.add_argument("--as-of", help="prediction date for optional Federal Register retrieval; same-day records excluded")
+    hybrid.add_argument("--context-query", help="retrieval query; defaults to --question")
     hybrid.add_argument("--tokens", type=int, default=32)
     hybrid.add_argument("--device", default="auto")
 
@@ -201,12 +205,26 @@ def main(argv: list[str] | None = None) -> int:
                 stride=args.stride,
                 device_name=args.device,
                 max_steps=args.max_steps,
+                evidence_pairs_path=args.evidence_pairs,
             )
             print(f"Saved SpeechPlan-H checkpoint: {result['output']}")
         elif args.command == "hybrid":
             from .hybrid_train import generate_hybrid
 
-            print(generate_hybrid(args.model, args.prefix, max_new_tokens=args.tokens, device_name=args.device))
+            evidence = ()
+            if args.as_of or args.context_query:
+                if not args.as_of:
+                    raise ValueError("--as-of is required for time-filtered context retrieval")
+                query = args.context_query or args.question
+                if not query:
+                    raise ValueError("provide --question or --context-query for context retrieval")
+                from .federalregister import search_documents
+
+                evidence = search_documents(args.as_of, query, limit=10, lookback_days=90)
+            print(generate_hybrid(
+                args.model, args.prefix, question_text=args.question, evidence_records=evidence,
+                as_of=args.as_of, max_new_tokens=args.tokens, device_name=args.device,
+            ))
         elif args.command == "pretrained-hybrid":
             from .hybrid_model import LLMNCMHybrid
             from .llm import CausalLM
