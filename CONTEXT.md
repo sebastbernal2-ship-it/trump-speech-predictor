@@ -17,7 +17,7 @@ A transcript segment with an explicit speaker label in the source. A question ma
 _Avoid_: Inferred speaker
 
 **Question-response pair**:
-A `Q.`-labeled turn with a question mark or recognized interrogative opening, linked to a subsequent president-labeled turn in transcript order. The link is heuristic and is not human-verified.
+A `Q.`-labeled turn with a question mark or recognized interrogative opening, linked to one or more subsequent president-labeled paragraphs until another explicit speaker intervenes. The link is heuristic and is not human-verified.
 _Avoid_: Answer label inferred only from punctuation or topic
 
 **Reporter prompt**:

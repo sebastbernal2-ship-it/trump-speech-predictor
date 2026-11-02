@@ -26,6 +26,20 @@ class SegmentTests(unittest.TestCase):
         self.assertEqual(segments[2]["response_to"], segments[1]["segment_id"])
         self.assertIsNone(segments[4]["response_to"])
 
+    def test_intervening_named_speaker_breaks_question_response_link(self):
+        record = {
+            "speech_id": "fixture", "date": "2025-01-01", "event": "Press interaction",
+            "source": "fixture",
+            "text": (
+                "Q. What is the plan?\n\n"
+                "Mr. Reporter. One follow-up.\n\n"
+                "The President. We will act today."
+            ),
+        }
+        segments = segment_record(record)
+        self.assertEqual(segments[2]["segment_type"], "presidential_remarks")
+        self.assertIsNone(segments[2]["response_to"])
+
     def test_reporter_floor_cue_is_not_a_question(self):
         record = {
             "speech_id": "fixture", "date": "2025-01-01", "event": "Press interaction",

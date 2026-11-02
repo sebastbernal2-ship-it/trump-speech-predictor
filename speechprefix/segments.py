@@ -13,7 +13,7 @@ SPEAKER_PATTERNS = (
     ("president", re.compile(r"^\s*(THE PRESIDENT|PRESIDENT TRUMP|DONALD J\. TRUMP|TRUMP)\s*[.:—-]\s*", re.IGNORECASE)),
     ("other", re.compile(r"^\s*((?:MR|MS|MRS|DR)\.\s+[^.\n]{1,60})\.\s*", re.IGNORECASE)),
 )
-CLASSIFIER_VERSION = "explicit-speaker-prefix-v2"
+CLASSIFIER_VERSION = "explicit-speaker-prefix-v3"
 INTERROGATIVE_START = re.compile(
     r"^(?:who|what|when|where|why|how|which|whom|whose|is|are|was|were|do|does|did|"
     r"can|could|will|would|should|has|have|had)\b",
@@ -72,6 +72,9 @@ def segment_record(record: dict) -> list[dict]:
         elif role == "other":
             kind = "other_speaker_turn"
             confidence = 0.95
+            if active_question_id and not answer_started:
+                active_question_id = None
+                active_turn_type = None
         else:
             kind = "unattributed_text"
             confidence = 0.0
