@@ -1,7 +1,7 @@
-"""Retrospective Google News RSS retrieval for exploratory context audits.
+"""Google News RSS retrieval for prospective freezes and retrospective audits.
 
-These snapshots are retrieved now, not at the historical prediction cutoff;
-they must never be presented as prospective evidence.
+Retrospective snapshots are exploratory only; prospective capture requires a
+future cutoff and independently attested event-schedule provenance.
 """
 
 from __future__ import annotations
@@ -60,6 +60,169 @@ def _fetch_google_news(query: str, *, timeout: float) -> tuple[str, str, list[di
             "date_precision": "timestamp_from_google_news_rss",
         })
     return url, hashlib.sha256(body).hexdigest(), sources
+
+
+def collect_prospective_news_snapshot(
+    manifest_path: str | Path,
+    output_path: str | Path,
+    *,
+    profile: str = "speaker-topic-families",
+    lookback_days: int = 30,
+    delay_seconds: float = 0.4,
+    timeout_seconds: float = 25,
+) -> dict[str, Any]:
+    """Capture and seal a dated news snapshot before a scheduled event cutoff.
+
+    The manifest must attest that the event schedule source was publicly
+    available before cutoff. This tool checks the recorded fields and clock,
+    but cannot independently verify that attestation.
+    """
+    from .context_snapshots import seal_prospective_snapshot
+
+    output = Path(output_path)
+    if output.exists():
+        raise FileExistsError(f"refusing to overwrite retrieval artifact: {output}")
+    if profile not in {"speaker-name", "speaker-topic-families"}:
+        raise ValueError("profile must be speaker-name or speaker-topic-families")
+    if lookback_days < 1 or delay_seconds < 0 or timeout_seconds <= 0:
+        raise ValueError("invalid lookback, delay, or timeout")
+    try:
+        manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise ValueError(f"invalid event manifest JSON: {error}") from None
+    if not isinstance(manifest, dict):
+        raise ValueError("event manifest must be a JSON object")
+    forbidden = {"transcript", "transcript_text", "target_text", "target_ideas", "theme_labels", "draft_themes", "outcome_labels"}
+    if forbidden.intersection(manifest):
+        raise ValueError("event manifest must not contain transcript or target-label fields")
+
+    def parse_time(value: Any, field: str) -> datetime:
+        if not isinstance(value, str) or "T" not in value:
+            raise ValueError(f"{field} must be an RFC 3339 timestamp")
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            raise ValueError(f"{field} must be an RFC 3339 timestamp") from None
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            raise ValueError(f"{field} must include a timezone")
+        return parsed.astimezone(timezone.utc)
+
+    cutoff = parse_time(manifest.get("prediction_cutoff_at"), "prediction_cutoff_at")
+    event_start = parse_time(manifest.get("event_start_at"), "event_start_at")
+    now = datetime.now(timezone.utc)
+    if now >= cutoff:
+        raise ValueError("prediction cutoff must still be in the future")
+    if cutoff >= event_start:
+        raise ValueError("prediction cutoff must be before event_start_at")
+    speaker = manifest.get("speaker", "Donald Trump")
+    if not isinstance(speaker, str) or not speaker.strip():
+        raise ValueError("manifest speaker must be a nonempty string")
+    event_id = manifest.get("event_id")
+    if not isinstance(event_id, str) or not event_id.strip():
+        raise ValueError("manifest event_id is required")
+    metadata = manifest.get("event_metadata")
+
+    def validate_metadata_source(source: Any, field: str) -> None:
+        provenance_fields = {"source_url", "published_at", "observed_at", "availability_verified_before_cutoff"}
+        if not isinstance(source, dict) or set(source) != provenance_fields:
+            raise ValueError(f"{field} must contain only the required provenance fields")
+        if not isinstance(source.get("source_url"), str) or not source["source_url"].strip():
+            raise ValueError(f"{field}.source_url is required")
+        published = parse_time(source.get("published_at"), f"{field}.published_at")
+        observed = parse_time(source.get("observed_at"), f"{field}.observed_at")
+        if published >= cutoff or published > observed or observed > now:
+            raise ValueError(f"{field} must be published and observed before snapshot collection and cutoff")
+        if source.get("availability_verified_before_cutoff") is not True:
+            raise ValueError(f"{field} availability must be independently verified before cutoff")
+
+    validate_metadata_source(metadata, "event_metadata")
+    location_metadata = manifest.get("location_metadata")
+    if location_metadata is not None:
+        validate_metadata_source(location_metadata, "location_metadata")
+
+    query_specs = [("speaker_name", f'"{speaker.strip()}"')]
+    if profile == "speaker-topic-families":
+        query_specs.extend(
+            (family, f'"{speaker.strip()}" {terms}')
+            for family, terms in ISSUE_QUERY_FAMILIES.items()
+        )
+    start = cutoff.date() - timedelta(days=lookback_days)
+    before = cutoff.date() + timedelta(days=1)
+    queries = []
+    sources_by_url: dict[str, dict[str, Any]] = {}
+    for index, (purpose, terms) in enumerate(query_specs):
+        query = f"{terms} after:{start.isoformat()} before:{before.isoformat()}"
+        url, response_sha256, candidates = _fetch_google_news(query, timeout=timeout_seconds)
+        retrieved_at = datetime.now(timezone.utc)
+        if retrieved_at > cutoff:
+            raise ValueError("news retrieval completed after the prediction cutoff; snapshot not written")
+        eligible = []
+        for candidate in candidates:
+            try:
+                published = parse_time(candidate.get("published_at"), "candidate published_at")
+            except ValueError:
+                continue
+            if published <= retrieved_at and published < cutoff and published.date() >= start and candidate.get("publisher"):
+                eligible.append(candidate)
+        queries.append({
+            "purpose": purpose,
+            "query": query,
+            "query_url": url,
+            "retrieved_at": retrieved_at.isoformat(),
+            "query_response_sha256": response_sha256,
+            "raw_result_count": len(candidates),
+            "eligible_result_count": len(eligible),
+        })
+        for candidate in eligible:
+            source_url = candidate["source_url"]
+            stored = sources_by_url.setdefault(source_url, {
+                **candidate,
+                "observed_at": retrieved_at.isoformat(),
+                "query_purposes": [],
+            })
+            if purpose not in stored["query_purposes"]:
+                stored["query_purposes"].append(purpose)
+        if delay_seconds and index + 1 < len(query_specs):
+            time.sleep(delay_seconds)
+
+    finished_at = datetime.now(timezone.utc)
+    if finished_at > cutoff:
+        raise ValueError("snapshot collection finished after the prediction cutoff; snapshot not written")
+    snapshot = {
+        "event_id": event_id,
+        "event_start_at": manifest["event_start_at"],
+        "prediction_cutoff_at": manifest["prediction_cutoff_at"],
+        "event_metadata": metadata,
+        "location_metadata": manifest.get("location_metadata"),
+        "speaker": speaker,
+        "retrieval_profile": profile,
+        "lookback_days": lookback_days,
+        "query_policy": (
+            "speaker-name query only; no transcript or target-idea terms"
+            if profile == "speaker-name"
+            else "fixed speaker-name and issue-family queries; no transcript or target-idea terms"
+        ),
+        "queries": queries,
+        "candidate_sources": sorted(
+            sources_by_url.values(), key=lambda source: (source["published_at"], source["title"]), reverse=True,
+        ),
+    }
+    sealed = seal_prospective_snapshot(snapshot, frozen_at=finished_at)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with output.open("x", encoding="utf-8") as stream:
+            json.dump(sealed, stream, ensure_ascii=False, indent=2)
+            stream.write("\n")
+    except FileExistsError:
+        raise FileExistsError(f"refusing to overwrite retrieval artifact: {output}") from None
+    return {
+        "output": str(output),
+        "event_id": event_id,
+        "candidate_source_count": len(sealed["candidate_sources"]),
+        "query_count": len(queries),
+        "snapshot_sha256": sealed["snapshot_sha256"],
+        "strict_prospective_eligible": True,
+    }
 
 
 def collect_speaker_news_snapshots(

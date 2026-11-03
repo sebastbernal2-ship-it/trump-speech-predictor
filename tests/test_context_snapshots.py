@@ -76,6 +76,13 @@ class ContextSnapshotTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must not include transcript"):
             validate_prospective_snapshot(snapshot)
 
+    def test_rejects_source_observed_before_its_publication_timestamp(self):
+        snapshot = self._valid_snapshot()
+        snapshot["candidate_sources"][0]["published_at"] = "2025-05-14T15:30:00Z"
+        snapshot["candidate_sources"][0]["observed_at"] = "2025-05-14T15:00:00Z"
+        with self.assertRaisesRegex(ValueError, "observed before its publication timestamp"):
+            validate_prospective_snapshot(snapshot)
+
     def test_rejects_retrospective_source_and_unverified_location(self):
         snapshot = self._valid_snapshot()
         snapshot["candidate_sources"][0]["observed_at"] = "2025-05-15T09:00:00Z"

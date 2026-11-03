@@ -111,6 +111,16 @@ def main(argv: list[str] | None = None) -> int:
     context_news_search.add_argument("--profile", choices=("speaker-name", "speaker-topic-families"), default="speaker-name")
     context_news_search.add_argument("--output", default="data/rollcall-context-snapshots-trump-name-v2.jsonl")
 
+    context_news_freeze = sub.add_parser(
+        "context-news-freeze", help="collect and seal news context before a scheduled event cutoff"
+    )
+    context_news_freeze.add_argument("--manifest", required=True, help="event schedule provenance JSON")
+    context_news_freeze.add_argument("--output", required=True, help="new immutable prospective snapshot JSON")
+    context_news_freeze.add_argument("--profile", choices=("speaker-name", "speaker-topic-families"), default="speaker-topic-families")
+    context_news_freeze.add_argument("--lookback-days", type=int, default=30)
+    context_news_freeze.add_argument("--delay", type=float, default=0.4)
+    context_news_freeze.add_argument("--timeout", type=float, default=25)
+
     context_theme_eval = sub.add_parser(
         "context-theme-evaluate", help="evaluate a weak, chronological context-to-theme ranking baseline"
     )
@@ -432,6 +442,15 @@ def main(argv: list[str] | None = None) -> int:
             result = collect_speaker_news_snapshots(
                 args.input, args.output, speaker=args.speaker, lookback_days=args.lookback_days,
                 delay_seconds=args.delay, timeout_seconds=args.timeout, profile=args.profile,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        elif args.command == "context-news-freeze":
+            import json
+            from .news_retrieval import collect_prospective_news_snapshot
+
+            result = collect_prospective_news_snapshot(
+                args.manifest, args.output, profile=args.profile, lookback_days=args.lookback_days,
+                delay_seconds=args.delay, timeout_seconds=args.timeout,
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
         elif args.command == "context-theme-evaluate":

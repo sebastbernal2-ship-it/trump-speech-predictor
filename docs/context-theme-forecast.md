@@ -25,7 +25,24 @@ The evaluator fits one Bernoulli naive-Bayes classifier per family on the earlie
 
 The v1 snapshot set is not a strict pre-event benchmark. A headline's date being earlier than the speech does not show that the headline was retrieved before the speech, and retrospective location-based search can select stories with hindsight. `speechprefix context-snapshot-audit` records these deficiencies; the current 20-snapshot audit found **0/20** eligible for prospective evaluation. All 20 were retrieved on/after their event date, lack exact event-start and cutoff timestamps, and lack per-source observation timestamps. All candidate publication dates are day-precision only; 17/20 use location hints whose pre-event availability is unverified.
 
-A prospective v2 record must include timezone-aware RFC 3339 values for event start and prediction cutoff; event-metadata provenance independently verified as available before the cutoff; exact retrieval/observation timestamps for queries and candidate sources; and publication timestamps strictly before cutoff. Use original publisher URLs and timestamps where possible, not a date-only search-feed date. Location may be included only with independent evidence it was known before cutoff. `speechprefix context-snapshot-seal --input <prepared.json> --output data/rollcall-context-prospective-<event-id>.json` stamps the current clock time, requires the cutoff and event to be in the future, validates provenance fields, and adds a content hash; `context-snapshot-validate` verifies the recorded contract and hash. The seal is local and append-only but cannot independently prove that source timestamps or availability attestations are truthful; retain and review the source documents and capture procedure. It also rejects transcript/target-label fields. Never relabel a retrospective v1 snapshot as prospective.
+A prospective v2 record must include timezone-aware RFC 3339 values for event start and prediction cutoff; event-metadata provenance independently verified as available before the cutoff; exact retrieval/observation timestamps for queries and candidate sources; and publication timestamps strictly before cutoff. Use original publisher URLs and timestamps where possible, not a date-only search-feed date. Location may be included only with independent evidence it was known before cutoff. `speechprefix context-snapshot-seal --input <prepared.json> --output data/rollcall-context-prospective-<event-id>.json` stamps the current clock time, requires the cutoff and event to be in the future, validates provenance fields, and adds a content hash; `context-snapshot-validate` verifies the recorded contract and hash. For fixed speaker/topic-family Google News queries, `speechprefix context-news-freeze --manifest <event.json> --output data/rollcall-context-prospective-<event-id>.json` performs the retrieval and seals it in one operation. The manifest must provide `event_id`, `event_start_at`, `prediction_cutoff_at`, and `event_metadata` with `source_url`, `published_at`, `observed_at`, and `availability_verified_before_cutoff: true`; all times are timezone-aware. For example:
+
+```json
+{
+  "event_id": "scheduled-event-id",
+  "speaker": "Donald Trump",
+  "event_start_at": "2030-01-20T18:00:00Z",
+  "prediction_cutoff_at": "2030-01-20T16:00:00Z",
+  "event_metadata": {
+    "source_url": "https://example.org/official-schedule",
+    "published_at": "2030-01-19T12:00:00Z",
+    "observed_at": "2030-01-19T12:05:00Z",
+    "availability_verified_before_cutoff": true
+  }
+}
+```
+
+It refuses to start after cutoff, excludes articles published after observation or at/after the exact cutoff, records query/source observation times and response hashes, and fails if retrieval finishes too late. The fixed query profile does not use event titles, transcripts, or target ideas. Google RSS timestamps remain feed-reported timestamps, not independently verified publisher times. The seal is local and append-only but cannot independently prove that source timestamps or availability attestations are truthful; retain and review the source documents and capture procedure. It also rejects transcript/target-label fields. Never relabel a retrospective v1 snapshot as prospective.
 
 ## Confidence policy
 
@@ -73,8 +90,9 @@ The `speaker-topic-families` profile adds four fixed, broad searches (economy/tr
 
 ## Next gates
 
-1. Improve and relevance-audit retrieval without consulting transcripts; verify event metadata and location were available before each event.
-2. Add chronological pairs with both observed and absent candidate ideas.
+1. Use `context-news-freeze` for a genuinely future scheduled event and independently verify the schedule-source availability before cutoff; no such snapshot is collected by the retrospective experiments above.
+2. Improve and relevance-audit retrieval without consulting transcripts; verify event metadata and location were available before each event.
+3. Add chronological pairs with both observed and absent candidate ideas.
 3. Keep context-derived issue ideas distinct from broad families and evaluate those levels separately.
 4. Compare against metadata-only and speaker-history baselines; calibrate only after a substantially larger independent holdout.
 5. Review errors before considering more complex models or expanding beyond themes.
