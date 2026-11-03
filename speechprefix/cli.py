@@ -107,6 +107,13 @@ def main(argv: list[str] | None = None) -> int:
     context_theme_eval.add_argument("--labels", default="data/rollcall-theme-family-drafts-v1.jsonl")
     context_theme_eval.add_argument("--output", default="data/rollcall-context-theme-evaluation-v1.json")
 
+    transcript_idea_audit = sub.add_parser(
+        "transcript-idea-audit", help="mine cited target-speaker ideas and compare them with dated headlines"
+    )
+    transcript_idea_audit.add_argument("--snapshots", default="data/rollcall-context-snapshots-v1.jsonl")
+    transcript_idea_audit.add_argument("--events", default="data/rollcall-by-type/trump-speech-candidates.jsonl")
+    transcript_idea_audit.add_argument("--output", default="data/rollcall-transcript-idea-audit-v1.json")
+
     context_candidates = sub.add_parser(
         "context-candidates", help="extract source-grounded issue candidates from pre-event headlines"
     )
@@ -407,6 +414,22 @@ def main(argv: list[str] | None = None) -> int:
                 "output": args.output,
                 "test_metrics": result["test_metrics"],
                 "test_predictions": result["test_predictions"],
+                "limitations": result["limitations"],
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "transcript-idea-audit":
+            import json
+            from .headline_idea_matching import evaluate_headline_idea_overlap
+
+            result = evaluate_headline_idea_overlap(args.snapshots, args.events, output_path=args.output)
+            ukraine_ideas = [
+                {"event_id": event["event_id"], "date": event["event_date"],
+                 "ideas": event["war_ukraine_russia_transcript_ideas"]}
+                for event in result["events"] if event["war_ukraine_russia_transcript_ideas"]
+            ]
+            print(json.dumps({
+                "output": args.output,
+                "summary_by_top_k": result["summary_by_top_k"],
+                "ukraine_russia_war_examples": ukraine_ideas,
                 "limitations": result["limitations"],
             }, ensure_ascii=False, indent=2))
         elif args.command == "context-candidates":

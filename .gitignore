@@ -40,6 +40,7 @@ data/rollcall-theme-adjudication-*.jsonl
 data/rollcall-theme-adjudication-template-*.jsonl
 data/rollcall-theme-reviewed-*.jsonl
 data/rollcall-context-idea-candidates-*.jsonl
+data/rollcall-transcript-idea-audit-*.json
 checkpoints/
 .DS_Store
 
