@@ -142,6 +142,12 @@ def freeze_idea_input_snapshot(
     missing = sorted(required - set(by_id))
     if missing:
         raise ValueError(f"event manifest references sources missing from ledger: {missing}")
+    wrong_metadata_types = sorted(
+        source_id for source_id in manifest["event_metadata_source_ids"]
+        if by_id[source_id]["source_type"] != "event_metadata"
+    )
+    if wrong_metadata_types:
+        raise ValueError(f"event_metadata_source_ids must reference event_metadata records: {wrong_metadata_types}")
 
     lookback_start = cutoff - timedelta(days=lookback_days)
     selected: dict[str, dict[str, Any]] = {}

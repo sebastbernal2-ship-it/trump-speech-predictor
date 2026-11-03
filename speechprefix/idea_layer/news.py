@@ -175,6 +175,8 @@ def retrieve_google_news_evidence(
             "published_at": row["published_at"],
             "observed_at": row["observed_at"],
             "availability_status": row["availability_status"],
+            "availability_evidence": "Google News RSS response SHA-256: " + ",".join(sorted(row["query_response_sha256"])),
+            "timestamp_basis": row["publication_timestamp_basis"],
             "content": row["content"],
             "content_sha256": row["content_sha256"],
             "reuse_terms": (

@@ -61,6 +61,10 @@ def validate_source_evidence(source: dict[str, Any]) -> dict[str, str]:
     source_id = _required_text(source, "source_id")
     if "canonical_source_id" in source:
         _required_text(source, "canonical_source_id")
+    if "archive_sha256" in source and (
+        not isinstance(source["archive_sha256"], str) or not _SHA256.fullmatch(source["archive_sha256"])
+    ):
+        raise ValueError("archive_sha256 must be a lowercase SHA-256 hex digest")
     source_type = source.get("source_type")
     if source_type not in SOURCE_TYPES:
         raise ValueError(f"unsupported source_type: {source_type!r}")
@@ -78,8 +82,12 @@ def validate_source_evidence(source: dict[str, Any]) -> dict[str, str]:
     observed = _timestamp(source.get("observed_at"), "observed_at")
     if published > observed:
         raise ValueError("observed_at cannot precede published_at")
-    if source.get("availability_status") not in AVAILABILITY_STATES:
+    availability_status = source.get("availability_status")
+    if availability_status not in AVAILABILITY_STATES:
         raise ValueError("availability_status must explicitly record verification status")
+    if availability_status == "verified_before_cutoff":
+        _required_text(source, "availability_evidence")
+        _required_text(source, "timestamp_basis")
     if source_type == "trump_post":
         _required_text(source, "account")
         _required_text(source, "post_id")
@@ -243,6 +251,12 @@ def validate_pre_speech_forecast(
         required_manifest_sources.update(fact["source_ids"])
     if not required_manifest_sources <= set(input_ids):
         raise ValueError("forecast must include every source backing the event metadata and known context")
+    wrong_metadata_types = sorted(
+        source_id for source_id in manifest["event_metadata_source_ids"]
+        if source_by_id[source_id]["source_type"] != "event_metadata"
+    )
+    if wrong_metadata_types:
+        raise ValueError(f"event_metadata_source_ids must reference event_metadata records: {wrong_metadata_types}")
     candidates = forecast.get("candidates")
     if not isinstance(candidates, list):
         raise ValueError("candidates must be a list")
