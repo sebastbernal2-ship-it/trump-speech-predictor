@@ -23,6 +23,9 @@ from .speech_plans import (
 )
 
 
+MAX_PLAN_CONTENT_TOKENS = 8
+
+
 @dataclass(frozen=True)
 class ExplicitPlanConfig:
     vocab_size: int
@@ -31,6 +34,9 @@ class ExplicitPlanConfig:
     eos_id: int
     plan_start_id: int
     end_plan_id: int
+    theme_id: int | None = None
+    section_id: int | None = None
+    point_id: int | None = None
     context_length: int = 128
     plan_length: int = 96
     width: int = 128
@@ -41,11 +47,16 @@ class ExplicitPlanConfig:
     def __post_init__(self):
         if self.vocab_size < 6 or self.width < 1 or self.heads < 1 or self.width % self.heads:
             raise ValueError("invalid vocabulary size or transformer dimensions")
-        ids = (self.pad_id, self.bos_id, self.eos_id, self.plan_start_id, self.end_plan_id)
+        ids = [self.pad_id, self.bos_id, self.eos_id, self.plan_start_id, self.end_plan_id]
+        hierarchy_ids = (self.theme_id, self.section_id, self.point_id)
+        if any(token_id is not None for token_id in hierarchy_ids):
+            if any(token_id is None for token_id in hierarchy_ids):
+                raise ValueError("all constrained hierarchy marker IDs must be supplied together")
+            ids.extend(hierarchy_ids)
         if any(token_id < 0 or token_id >= self.vocab_size for token_id in ids) or len(set(ids)) != len(ids):
             raise ValueError("special token IDs must be distinct and within the vocabulary")
-        if min(self.context_length, self.plan_length, self.layers) < 1:
-            raise ValueError("sequence lengths and layer count must be positive")
+        if min(self.context_length, self.layers) < 1 or self.plan_length < 7:
+            raise ValueError("context length and layer count must be positive; plan length must be at least 7")
 
 
 class ExplicitPlanPathModel(nn.Module):
@@ -101,13 +112,59 @@ class ExplicitPlanPathModel(nn.Module):
         try:
             generated = torch.tensor([[self.config.plan_start_id]], dtype=torch.long, device=context_ids.device)
             maximum = max_new_tokens or self.config.plan_length
-            for _ in range(min(maximum, self.config.plan_length)):
-                input_ids = torch.cat((context_ids, generated), dim=1)
-                attention_mask = input_ids.ne(self.config.pad_id).long()
-                logits = self.decoder(input_ids=input_ids, attention_mask=attention_mask).logits[0, -1]
-                next_id = int(logits.argmax())
+            maximum = min(maximum, self.config.plan_length)
+            if self.config.theme_id is not None and maximum < 7:
+                raise ValueError("constrained plan generation requires at least 7 new tokens")
+            phase = 0
+            content_tokens = 0
+            for _ in range(maximum):
+                if self.config.theme_id is not None and phase == 0:
+                    next_id = self.config.theme_id
+                else:
+                    input_ids = torch.cat((context_ids, generated), dim=1)
+                    attention_mask = input_ids.ne(self.config.pad_id).long()
+                    logits = self.decoder(input_ids=input_ids, attention_mask=attention_mask).logits[0, -1].clone()
+                    if self.config.theme_id is not None:
+                        structural = {
+                            self.config.pad_id, self.config.bos_id, self.config.eos_id,
+                            self.config.plan_start_id, self.config.theme_id, self.config.section_id,
+                            self.config.point_id, self.config.end_plan_id, UNK_ID,
+                        }
+                        remaining = maximum - (generated.shape[1] - 1)
+                        transition_id = (
+                            self.config.section_id if phase == 1
+                            else self.config.point_id if phase == 2
+                            else self.config.end_plan_id
+                        )
+                        transition_logit = logits[transition_id].clone()
+                        for token_id in structural:
+                            logits[token_id] = float("-inf")
+                        minimum_after_transition = 4 if phase == 1 else 3 if phase == 2 else 0
+                        force_transition = (
+                            content_tokens >= MAX_PLAN_CONTENT_TOKENS
+                            or remaining <= minimum_after_transition + 1
+                        )
+                        if content_tokens > 0 and force_transition:
+                            next_id = transition_id
+                        else:
+                            if content_tokens > 0:
+                                logits[transition_id] = transition_logit
+                            next_id = int(logits.argmax())
+                    else:
+                        next_id = int(logits.argmax())
                 generated = torch.cat((generated, generated.new_tensor([[next_id]])), dim=1)
-                if next_id == self.config.end_plan_id:
+                if self.config.theme_id is not None:
+                    if phase == 0:
+                        phase, content_tokens = 1, 0
+                    elif next_id == self.config.section_id:
+                        phase, content_tokens = 2, 0
+                    elif next_id == self.config.point_id:
+                        phase, content_tokens = 3, 0
+                    elif next_id == self.config.end_plan_id:
+                        break
+                    else:
+                        content_tokens += 1
+                elif next_id == self.config.end_plan_id:
                     break
             return generated[0, 1:].tolist()
         finally:
@@ -196,9 +253,10 @@ def _encode_text(text: str, lookup: dict[str, int], length: int) -> list[int]:
 
 def _encode_plan(text: str, lookup: dict[str, int], length: int, end_plan_id: int) -> list[int]:
     tokens = [lookup.get(token, UNK_ID) for token in tokenize(text)]
-    tokens = tokens[: max(0, length - 1)]
     if not tokens or tokens[-1] != end_plan_id:
         tokens.append(end_plan_id)
+    if len(tokens) > length:
+        raise ValueError(f"target plan has {len(tokens)} tokens; plan_length={length} would truncate it")
     return tokens + [PAD_ID] * (length - len(tokens))
 
 
@@ -304,6 +362,8 @@ def train_explicit_plan_model(
     config = ExplicitPlanConfig(
         vocab_size=len(vocabulary), pad_id=PAD_ID, bos_id=BOS_ID, eos_id=EOS_ID,
         plan_start_id=lookup["__plan__"], end_plan_id=lookup["__endplan__"],
+        theme_id=lookup["__theme__"], section_id=lookup["__section__"],
+        point_id=lookup["__point__"],
         context_length=context_length, plan_length=plan_length,
         width=width, layers=layers, heads=heads,
     )
@@ -317,7 +377,7 @@ def train_explicit_plan_model(
     test_loader = DataLoader(test_data, batch_size=batch_size)
     version = create_model_version(
         model_family="speechplan-explicit",
-        architecture="plan-path-v1",
+        architecture="plan-path-v2",
         task="in-speech theme-section-talking-point prediction",
         dataset_path=events_path,
         additional_data_path=plans_path,
@@ -328,6 +388,8 @@ def train_explicit_plan_model(
             "learning_rate": 3e-4, "weight_decay": 0.01,
             "cpu_threads": torch.get_num_threads() if device.type == "cpu" else None,
             "label_policy": label_policy,
+            "decoding_policy": "hierarchy-grammar-v1" if config.theme_id is not None else "unconstrained-v1",
+            "max_content_tokens_per_level": MAX_PLAN_CONTENT_TOKENS,
             "examples": {
                 "train": len(train_examples),
                 "validation": len(validation_examples),
@@ -404,7 +466,7 @@ def _save_explicit_checkpoint(
 ) -> None:
     _write_checkpoint(path, {
         "format": 1,
-        "architecture": "speechplan-explicit/plan-path-v1",
+        "architecture": f"speechplan-explicit/{version['architecture']}",
         "config": asdict(model.config),
         "vocabulary": vocabulary,
         "state_dict": {key: value.detach().cpu() for key, value in model.state_dict().items()},
@@ -418,7 +480,9 @@ def load_explicit_plan_model(path: str | Path, device_name: str = "auto"):
         else "cpu" if device_name == "auto" else device_name
     )
     checkpoint = torch.load(path, map_location="cpu", weights_only=True)
-    if checkpoint.get("format") != 1 or checkpoint.get("architecture") != "speechplan-explicit/plan-path-v1":
+    if checkpoint.get("format") != 1 or checkpoint.get("architecture") not in {
+        "speechplan-explicit/plan-path-v1", "speechplan-explicit/plan-path-v2",
+    }:
         raise ValueError("unsupported explicit plan checkpoint")
     config = ExplicitPlanConfig(**checkpoint["config"])
     model = ExplicitPlanPathModel(config)

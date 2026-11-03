@@ -94,6 +94,8 @@ class ExplicitPlanTests(unittest.TestCase):
         config = ExplicitPlanConfig(
             vocab_size=len(vocabulary), pad_id=0, bos_id=2, eos_id=3,
             plan_start_id=lookup["__plan__"], end_plan_id=lookup["__endplan__"],
+            theme_id=lookup["__theme__"], section_id=lookup["__section__"],
+            point_id=lookup["__point__"],
             context_length=8, plan_length=12, width=16, layers=1, heads=2,
         )
         model = ExplicitPlanPathModel(config)
@@ -106,7 +108,9 @@ class ExplicitPlanTests(unittest.TestCase):
         result = model(context, target)
         self.assertTrue(math.isfinite(float(result["loss"].detach())))
         self.assertEqual(tuple(result["logits"].shape), (1, 12, len(vocabulary)))
-        self.assertLessEqual(len(model.generate(context)), config.plan_length)
+        generated = model.generate(context, max_new_tokens=config.plan_length)
+        self.assertLessEqual(len(generated), config.plan_length)
+        self.assertTrue(parse_plan_path([vocabulary[index] for index in generated])["point"])
 
     def test_trains_and_registers_a_separate_version_on_reviewed_fixture_plans(self):
         torch.set_num_threads(1)
@@ -129,11 +133,15 @@ class ExplicitPlanTests(unittest.TestCase):
                 min_frequency=1, max_vocabulary=64, device_name="cpu",
             )
             self.assertTrue(output.is_file())
-            self.assertIn("speechplan-explicit/plan-path-v1/", result["model_version"])
+            self.assertIn("speechplan-explicit/plan-path-v2/", result["model_version"])
             registered = json.loads(registry.read_text(encoding="utf-8"))
             self.assertEqual(registered["model_version"], result["model_version"])
             self.assertEqual(registered["training"]["label_policy"], "reviewed")
             self.assertGreaterEqual(registered["metrics"]["test"]["examples"], 1)
+            from speechprefix.explicit_plan import predict_plan_path
+
+            prediction = predict_plan_path(output, "Observed speech prefix", device_name="cpu")
+            self.assertEqual(set(prediction), {"model_version", "theme", "section", "point"})
             with self.assertRaisesRegex(FileExistsError, "versioned path"):
                 train_explicit_plan_model(events_path, plans_path, output, registry_path=registry)
 

@@ -22,4 +22,4 @@ Model weights and transcript data remain local and ignored by Git. The registry 
 
 ## Explicit plan-path model
 
-The explicit path model is `speechplan-explicit/plan-path-v1`, separate from SpeechPlan-H. Each run records its label policy and both the source-event and plan-label hashes. `reviewed` accepts only human-reviewed plans. `weak-extractive` accepts only draft plans bearing the extractive-labeler source marker and is a separate weak-supervision experiment; its metrics are not semantic idea accuracy. Keep plan-path metrics separate from continuation and wording metrics.
+The explicit path model is `speechplan-explicit/plan-path-v2` (grammar-constrained decoding), separate from SpeechPlan-H. Earlier v1 artifacts retain their original unconstrained decoder. Each run records its label policy and both the source-event and plan-label hashes. `reviewed` accepts only human-reviewed plans. `weak-extractive` accepts only draft plans bearing the extractive-labeler source marker and is a separate weak-supervision experiment; its metrics are not semantic idea accuracy. Keep plan-path metrics separate from continuation and wording metrics.
