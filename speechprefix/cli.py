@@ -156,6 +156,15 @@ def main(argv: list[str] | None = None) -> int:
     context_idea_eval.add_argument("--train-fraction", type=float, default=0.8)
     context_idea_eval.add_argument("--validation-fraction", type=float, default=0.1)
 
+    context_issue_forecast_eval = sub.add_parser(
+        "context-issue-forecast-evaluate", help="score a saved pre-cutoff issue forecast after its event"
+    )
+    context_issue_forecast_eval.add_argument("--forecast", required=True, help="immutable forecast JSON")
+    context_issue_forecast_eval.add_argument("--snapshot", required=True, help="sealed prospective snapshot JSON")
+    context_issue_forecast_eval.add_argument("--events", default="data/rollcall-by-type/trump-speech-candidates.jsonl")
+    context_issue_forecast_eval.add_argument("--output", required=True, help="new immutable local evaluation report")
+    context_issue_forecast_eval.add_argument("--top-k", default="4,10,25", help="comma-separated cutoffs")
+
     context_candidate_eval = sub.add_parser(
         "context-candidate-evaluate", help="evaluate source-derived issue candidates against weak theme labels"
     )
@@ -553,6 +562,23 @@ def main(argv: list[str] | None = None) -> int:
                 "output": args.output,
                 "split": result["split"],
                 "test_metrics": result["test_metrics"],
+                "limitations": result["limitations"],
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "context-issue-forecast-evaluate":
+            import json
+            from .context_issue_forecast_evaluation import evaluate_prospective_issue_forecast
+
+            try:
+                top_k = tuple(int(value) for value in args.top_k.split(","))
+            except ValueError:
+                raise ValueError("--top-k must be comma-separated positive integers") from None
+            result = evaluate_prospective_issue_forecast(
+                args.forecast, args.snapshot, args.events, output_path=args.output, top_k=top_k,
+            )
+            print(json.dumps({
+                "output": args.output,
+                "event_id": result["event_id"],
+                "metrics": result["metrics"],
                 "limitations": result["limitations"],
             }, ensure_ascii=False, indent=2))
         elif args.command == "context-candidate-evaluate":
