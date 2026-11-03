@@ -29,6 +29,8 @@ def _validate_available_source(source: Any, field: str, cutoff: datetime, frozen
     observed = _timestamp(source.get("observed_at"), f"{field}.observed_at")
     if published >= cutoff:
         raise ValueError(f"{field} was not published before the prediction cutoff")
+    if published > observed:
+        raise ValueError(f"{field} was observed before its publication timestamp")
     if observed > frozen:
         raise ValueError(f"{field} was observed after the snapshot was frozen")
     if field.startswith("event_metadata") and source.get("availability_verified_before_cutoff") is not True:

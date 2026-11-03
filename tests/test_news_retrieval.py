@@ -6,7 +6,8 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
-from speechprefix.news_retrieval import collect_speaker_news_snapshots
+from speechprefix.context_snapshots import validate_prospective_snapshot
+from speechprefix.news_retrieval import collect_prospective_news_snapshot, collect_speaker_news_snapshots
 
 
 RSS = b'''<?xml version="1.0"?><rss><channel>
@@ -57,6 +58,95 @@ class NewsRetrievalTests(unittest.TestCase):
             self.assertEqual(len(row["candidate_sources"][0]["query_purposes"]), 5)
             self.assertIn("no transcript or target-idea terms", row["query_policy"])
             self.assertTrue(any("economy OR jobs" in query["query"] for query in row["queries"]))
+
+    def test_prospective_capture_filters_at_timestamp_and_seals_provenance(self):
+        from datetime import datetime, timedelta, timezone
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            now = datetime.now(timezone.utc)
+            cutoff = now + timedelta(hours=1)
+            manifest = root / "event.json"
+            output = root / "prospective.json"
+            manifest.write_text(json.dumps({
+                "event_id": "future-event",
+                "speaker": "Donald Trump",
+                "event_start_at": (now + timedelta(hours=2)).isoformat(),
+                "prediction_cutoff_at": cutoff.isoformat(),
+                "event_metadata": {
+                    "source_url": "https://schedule.test/event",
+                    "published_at": (now - timedelta(hours=2)).isoformat(),
+                    "observed_at": (now - timedelta(hours=1)).isoformat(),
+                    "availability_verified_before_cutoff": True,
+                },
+            }), encoding="utf-8")
+            candidates = [
+                {"title": "Earlier policy report", "publisher": "Example News",
+                 "published_at": (now - timedelta(days=1)).isoformat(),
+                 "source_url": "https://news.test/earlier", "date_precision": "timestamp_from_google_news_rss"},
+                {"title": "Future-dated report", "publisher": "Example News",
+                 "published_at": (now + timedelta(minutes=30)).isoformat(),
+                 "source_url": "https://news.test/future-dated", "date_precision": "timestamp_from_google_news_rss"},
+                {"title": "After cutoff report", "publisher": "Example News",
+                 "published_at": (cutoff + timedelta(minutes=1)).isoformat(),
+                 "source_url": "https://news.test/later", "date_precision": "timestamp_from_google_news_rss"},
+            ]
+            with patch("speechprefix.news_retrieval._fetch_google_news", return_value=("https://news.test/rss", "a" * 64, candidates)) as mocked:
+                result = collect_prospective_news_snapshot(
+                    manifest, output, profile="speaker-name", delay_seconds=0,
+                )
+            mocked.assert_called_once()
+            snapshot = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result["candidate_source_count"], 1)
+            self.assertEqual(snapshot["candidate_sources"][0]["title"], "Earlier policy report")
+            self.assertIn("observed_at", snapshot["candidate_sources"][0])
+            self.assertEqual(validate_prospective_snapshot(snapshot)["event_id"], "future-event")
+
+    def test_prospective_capture_rejects_past_cutoff_before_query(self):
+        from datetime import datetime, timedelta, timezone
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            now = datetime.now(timezone.utc)
+            manifest = root / "event.json"
+            manifest.write_text(json.dumps({
+                "event_id": "past-cutoff",
+                "event_start_at": (now + timedelta(hours=1)).isoformat(),
+                "prediction_cutoff_at": (now - timedelta(seconds=1)).isoformat(),
+                "event_metadata": {
+                    "source_url": "https://schedule.test/event",
+                    "published_at": (now - timedelta(hours=2)).isoformat(),
+                    "observed_at": (now - timedelta(hours=1)).isoformat(),
+                    "availability_verified_before_cutoff": True,
+                },
+            }), encoding="utf-8")
+            with patch("speechprefix.news_retrieval._fetch_google_news") as mocked:
+                with self.assertRaisesRegex(ValueError, "cutoff must still be in the future"):
+                    collect_prospective_news_snapshot(manifest, root / "snapshot.json", delay_seconds=0)
+            mocked.assert_not_called()
+
+    def test_prospective_capture_validates_schedule_provenance_before_query(self):
+        from datetime import datetime, timedelta, timezone
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            now = datetime.now(timezone.utc)
+            manifest = root / "event.json"
+            manifest.write_text(json.dumps({
+                "event_id": "unverified-observation",
+                "event_start_at": (now + timedelta(hours=2)).isoformat(),
+                "prediction_cutoff_at": (now + timedelta(hours=1)).isoformat(),
+                "event_metadata": {
+                    "source_url": "https://schedule.test/event",
+                    "published_at": (now - timedelta(hours=2)).isoformat(),
+                    "observed_at": (now + timedelta(minutes=10)).isoformat(),
+                    "availability_verified_before_cutoff": True,
+                },
+            }), encoding="utf-8")
+            with patch("speechprefix.news_retrieval._fetch_google_news") as mocked:
+                with self.assertRaisesRegex(ValueError, "published and observed before snapshot collection"):
+                    collect_prospective_news_snapshot(manifest, root / "snapshot.json", delay_seconds=0)
+            mocked.assert_not_called()
 
     def test_refuses_to_overwrite_without_making_a_request(self):
         with tempfile.TemporaryDirectory() as directory:
