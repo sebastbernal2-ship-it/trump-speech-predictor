@@ -72,6 +72,12 @@ Only `review_status: "reviewed"` plans with a reviewer and valid target-speaker 
 
 Evaluate theme, section, and talking-point prediction separately from exact wording. Split by whole event dates. For in-speech predictions, compare only plan nodes grounded in transcript spans that occur after the prediction point; do not expose those nodes or their text in the input. Keep this task separate from pre-speech forecasts and question-anchored response prediction.
 
+## Staged development
+
+The next semantic-model stage is theme-only: predict broad speech ideas from a causal transcript prefix, without section or talking-point outputs. Keep the existing joint path model as a failed prototype; do not use it as evidence that the idea layer works. Add section/subidea prediction only after the theme-only stage beats causal retrieval baselines on a larger chronological holdout and error review shows no systematic collapse. Add talking points after that stage passes. The exact numerical acceptance bar remains to be set.
+
+The local `data/rollcall-theme-only-assistant-pilot-v1.jsonl` contains six full-transcript AI-draft annotations (11 themes). Chronological split counts are 4 training / 1 validation / 1 test events (7 / 2 / 2 theme nodes), too small for model training or a quality claim. These annotations calibrate the theme definition only; they are not human-reviewed gold labels. Expand and check the theme annotations before training.
+
 ## Explicit path model and label policies
 
 `explicit-plan-train` trains a separate, from-scratch causal model that predicts one theme → section → talking-point path from an observed prefix. It supports three deliberately separate label policies:
