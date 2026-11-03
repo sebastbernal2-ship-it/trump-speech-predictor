@@ -66,7 +66,7 @@ A reviewed plan is stored separately from the source event and points back to ta
 }
 ```
 
-Only `review_status: "reviewed"` plans with a reviewer and valid target-speaker turn references are eligible for supervised training. Draft or machine-suggested plans are not gold labels. Annotators should ground every node in the cited transcript turns, avoid inferring intent not stated in the transcript, and allow overlapping turn references when a source span contains multiple points. The local 20-event review batch is only a draft, not training data. Review a small pilot and check annotator agreement before scaling; do not train an explicit semantic hierarchy on automatically inferred adjacent spans or treat VQ codes as semantic labels.
+Only `review_status: "reviewed"` plans with a reviewer and valid target-speaker turn references are eligible for supervised training. Draft or machine-suggested plans are not gold labels. Annotators should ground every node in the cited transcript turns, avoid inferring intent not stated in the transcript, and allow overlapping turn references when a source span contains multiple points. Two local blind copies of the 20-event pilot are available at `data/rollcall-plan-review-annotator-a.jsonl` and `data/rollcall-plan-review-annotator-b.jsonl`; both contain blank plans, not machine suggestions. Annotate independently, compare disagreements, then adjudicate. Their chronological hints are 16 train / 2 validation / 2 test events; this is only a schema/agreement pilot, not enough for model-quality claims. Keep the test events out of training. Do not train an explicit semantic hierarchy on automatically inferred adjacent spans or treat VQ codes as semantic labels.
 
 ## Evaluation boundaries
 

@@ -34,7 +34,7 @@ python3 -m speechprefix prepare-rollcall-speeches
 
 By default, an event must contain at least 1,000 Trump whitespace-delimited words, with Trump contributing at least 80% of all event words. The export keeps only Trump turns and writes standard dated speech records to `trump-long-speeches.jsonl`; the full timestamped source remains in the master corpus. Use the `--min-target-words` and `--min-target-share` options to change the selection thresholds.
 
-Human-reviewed hierarchical speech plans belong in the separate, ignored `rollcall-speech-plans.jsonl`, keyed by event ID. Each theme, section, and talking point must cite target-speaker turn IDs. Only reviewed, validated plans are eligible for the reviewed semantic-training policy; see `docs/hierarchical-speech-planner.md` for the plan tree and example format. `rollcall-plan-review-pilot.jsonl` is a local 20-speech review batch with target turns and draft plan trees. Draft outlines remain unreviewed and are not training data.
+Human-reviewed hierarchical speech plans belong in the separate, ignored `rollcall-speech-plans.jsonl`, keyed by event ID. Each theme, section, and talking point must cite target-speaker turn IDs. Only reviewed, validated plans are eligible for the reviewed semantic-training policy; see `docs/hierarchical-speech-planner.md` for the plan tree and example format. `rollcall-plan-review-pilot.jsonl` is a local 20-speech source batch. Two blank, blinded reviewer copies are also local; follow the independent review procedure in `docs/hierarchical-speech-planner.md`. Draft outlines remain unreviewed and are not training data.
 
 A separate weak-label experiment can be generated from the real timestamped speech transcripts:
 
