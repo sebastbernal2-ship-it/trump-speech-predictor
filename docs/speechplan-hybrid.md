@@ -14,7 +14,7 @@ A planner predicts coarse-to-fine residual VQ codes for the next segment. The au
 
 ## Time-coded event data
 
-The target interaction is a timestamped, multi-speaker event, not an adjacent paragraph pair. `speechprefix/events.py` parses source spans and keeps their timestamps, speaker names, text, page metadata, and per-span annotations. The `turn-import` CLI writes these events as JSONL; see `data/README.md` for the schema. The proposed explicit speech theme/section/talking-point hierarchy is described in `docs/hierarchical-speech-planner.md` and is not implemented in this model yet.
+The target interaction is a timestamped, multi-speaker event, not an adjacent paragraph pair. `speechprefix/events.py` parses source spans and keeps their timestamps, speaker names, text, page metadata, and per-span annotations. The `turn-import` CLI writes these events as JSONL; see `data/README.md` for the schema. The separate explicit theme/section/talking-point path model is described in `docs/hierarchical-speech-planner.md`; it does not alter or condition this SpeechPlan-H decoder.
 
 Question-to-response alignments are supplied by a reviewer. They identify the prediction cutoff, visible trigger spans, any target-speaker response spans, other-speaker outcomes, and optional human-reviewed idea labels. The parser does not guess that a nearby span answers a question. `prediction_example_inputs` separates causal model inputs, gold targets, and source provenance. It constructs a transcript prefix and separate trigger text from visible spans. Page and StressLens annotations are preserved under provenance, not silently treated as information available to the model. Response status, semantic idea labels, and exact target words remain distinct.
 
