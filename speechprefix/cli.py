@@ -121,6 +121,20 @@ def main(argv: list[str] | None = None) -> int:
     context_news_freeze.add_argument("--delay", type=float, default=0.4)
     context_news_freeze.add_argument("--timeout", type=float, default=25)
 
+    idea_source_import = sub.add_parser(
+        "idea-source-import", help="validate and append source items to the standalone idea-layer ledger"
+    )
+    idea_source_import.add_argument("--input", required=True, help="JSONL source-evidence records")
+    idea_source_import.add_argument("--ledger", default="data/idea-layer/source-ledger.jsonl")
+
+    idea_snapshot_freeze = sub.add_parser(
+        "idea-snapshot-freeze", help="freeze verified news, posts, and event details before a speech cutoff"
+    )
+    idea_snapshot_freeze.add_argument("--manifest", required=True, help="pre-event idea-layer event manifest JSON")
+    idea_snapshot_freeze.add_argument("--ledger", default="data/idea-layer/source-ledger.jsonl")
+    idea_snapshot_freeze.add_argument("--output", required=True, help="new immutable input snapshot JSON")
+    idea_snapshot_freeze.add_argument("--lookback-days", type=int, default=30)
+
     speaker_idea_eval = sub.add_parser(
         "speaker-idea-evaluate", help="walk-forward evaluate recurring issue-phrase forecasts from speaker history"
     )
@@ -501,6 +515,20 @@ def main(argv: list[str] | None = None) -> int:
             result = collect_prospective_news_snapshot(
                 args.manifest, args.output, profile=args.profile, lookback_days=args.lookback_days,
                 delay_seconds=args.delay, timeout_seconds=args.timeout,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        elif args.command == "idea-source-import":
+            import json
+            from .idea_layer.ledger import append_source_records
+
+            result = append_source_records(args.input, args.ledger)
+            print(json.dumps({"ledger": args.ledger, **result}, ensure_ascii=False, indent=2))
+        elif args.command == "idea-snapshot-freeze":
+            import json
+            from .idea_layer.ledger import freeze_idea_input_snapshot
+
+            result = freeze_idea_input_snapshot(
+                args.manifest, args.ledger, args.output, lookback_days=args.lookback_days,
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
         elif args.command == "speaker-idea-evaluate":
