@@ -30,6 +30,8 @@ data/rollcall-context-snapshots-*.jsonl
 data/rollcall-theme-family-drafts-*.jsonl
 data/rollcall-context-theme-evaluation-*.json
 data/rollcall-context-theme-case-replay-*.json
+data/rollcall-context-candidate-evaluation-*.json
+data/rollcall-context-idea-candidates-*.jsonl
 checkpoints/
 .DS_Store
 

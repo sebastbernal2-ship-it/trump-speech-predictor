@@ -33,9 +33,15 @@ class ContextCandidateTests(unittest.TestCase):
             {"title": "Commercial investment and business agreements", "published_at": "2025-05-10", "url": "business"},
         ]
         candidates = extract_context_candidates(sources, "2025-05-14")
+        candidate_ids = {candidate["candidate_id"] for candidate in candidates}
         self.assertTrue({
             "gulf_partnership_diplomacy", "gaza_hostages_ceasefire", "foreign_security", "business_investment",
-        }.issubset({candidate["candidate_id"] for candidate in candidates}))
+        }.issubset(candidate_ids))
+        generic_diplomacy = extract_context_candidates([{
+            "title": "Iran and US explore diplomacy amid rising threats of war",
+            "published_at": "2025-05-12", "url": "diplomacy",
+        }], "2025-05-14")
+        self.assertNotIn("gulf_partnership_diplomacy", {candidate["candidate_id"] for candidate in generic_diplomacy})
 
     def test_loads_json_context_map_and_selects_jsonl_event(self):
         with tempfile.TemporaryDirectory() as directory:

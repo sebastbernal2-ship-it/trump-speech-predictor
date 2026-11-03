@@ -15,6 +15,23 @@ import re
 from typing import Any
 
 
+TOPIC_FAMILY = {
+    "election_turnout": ("election_campaign_governance",),
+    "working_class_economy": ("economy_trade_jobs",),
+    "immigration_border": ("immigration_border",),
+    "biden_garbage_controversy": ("media_information", "election_campaign_governance"),
+    "media_press": ("media_information",),
+    "gaza_hostages_ceasefire": ("foreign_policy_national_security",),
+    "gulf_partnership_diplomacy": ("foreign_policy_national_security",),
+    "business_investment": ("economy_trade_jobs",),
+    "foreign_security": ("foreign_policy_national_security",),
+    "crime_public_safety": ("crime_public_safety",),
+    "health_public_health": ("healthcare_public_health",),
+    "energy_environment": ("energy_environment",),
+    "disaster_local_resources": ("disaster_local_resources",),
+    "education_culture_values": ("education_culture_religion",),
+}
+
 TOPICS = {
     "election_turnout": {
         "summary": "Election stakes, turnout, voting, and campaign mobilization",
@@ -39,11 +56,11 @@ TOPICS = {
     },
     "gaza_hostages_ceasefire": {
         "summary": "Gaza, hostages, ceasefire efforts, and regional mediation",
-        "pattern": re.compile(r"\b(hostage|hostages|hamas|gaza|ceasefire|israel)\b", re.I),
+        "pattern": re.compile(r"\b(hostage|hostages|hamas|gaza|ceasefire)\b", re.I),
     },
     "gulf_partnership_diplomacy": {
         "summary": "Gulf diplomacy, bilateral ties, and international partnership",
-        "pattern": re.compile(r"\b(qatar|gulf|diplomacy|diplomatic|partnership|bilateral|alliance|relations)\b", re.I),
+        "pattern": re.compile(r"\b(qatar|qatari|gulf|partnership|bilateral ties|alliance)\b", re.I),
     },
     "business_investment": {
         "summary": "Commercial ties, investment, and business agreements",
