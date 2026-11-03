@@ -17,7 +17,7 @@ from typing import Any
 from .context_theme_ranker import read_jsonl
 
 WORD = re.compile(r"[A-Za-z]+(?:['’-][A-Za-z]+)?")
-STOPWORDS = frozenset("""a an and are as at be been being by for from had has have he her hers him his i if in into is it its me my of on or our ours she that the their theirs them there these they this those to was we were what when where which who will with you your about after all also amid among around because before between both but can could during each even every first following further how however including just more most new not now only other over said says some such than then through today under until very while why would year years breaking latest live news report update watch video photos trump donald president campaign administration us""".split())
+STOPWORDS = frozenset("""a an and are as at be been being by for from had has have he her hers him his i if in into is it its me my of on or our ours she that the their theirs them there these they this those to was we were what when where which who will with you your about after all also amid among around because before between both but can could during each even every first following further how however including just more most new not now only other over said says some such than then through today under until very while why would year years breaking latest live news report update watch video photos trump donald president campaign administration us i'm i've i'll i'd we're we've we'll we'd they're they've they'll he's she's it's that's there's here's what's who's don't doesn't didn't can't won't wouldn't couldn't shouldn't isn't aren't wasn't weren't hasn't haven't so oh okay ok yeah yes no right well here tonight today everybody someone somebody anybody everyone everything already actually sure may""".split())
 ALIASES = {
     "ukrainian": "ukraine", "ukrainians": "ukraine",
     "russian": "russia", "russians": "russia",
@@ -169,7 +169,10 @@ def extract_transcript_ideas(turns: list[dict[str, Any]]) -> list[dict[str, Any]
         "people", "person", "country", "countries", "thing", "things", "time", "times",
         "know", "look", "think", "believe", "want", "going", "go", "got", "get",
         "make", "made", "come", "came", "say", "said", "see", "really", "very",
-        "great", "good", "bad", "big", "much", "many", "lot", "kind", "way",
+        "great", "good", "bad", "big", "much", "many", "lot", "kind", "way", "tell", "told",
+        "horrible", "beautiful", "young", "incredible", "fantastic", "presidency", "seen", "seeing",
+        "doing", "did", "do", "like", "happen", "happened", "maybe", "even", "getting", "gotten",
+        "tonight", "today", "everyone", "everybody", "somebody", "anybody", "someone", "everything",
     }
     grouped: dict[tuple[str, ...], dict[str, Any]] = {}
     for turn in turns:
@@ -177,10 +180,11 @@ def extract_transcript_ideas(turns: list[dict[str, Any]]) -> list[dict[str, Any]
         turn_id = turn.get("turn_id")
         if not isinstance(text, str) or not isinstance(turn_id, str):
             continue
-        for sentence in re.split(r"(?<=[.!?])\s+", text):
+        cleaned_text = re.sub(r"\[[^\]]*\]", " ", text)
+        for sentence in re.split(r"(?<=[.!?])\s+", cleaned_text):
             sentence = sentence.strip()
             words = [item for item in _tokens(sentence) if item[0] not in STOPWORDS and item[0] not in speech_fillers and len(item[0]) > 1]
-            for size in range(2, min(4, len(words)) + 1):
+            for size in range(2, min(3, len(words)) + 1):
                 for start in range(len(words) - size + 1):
                     span = words[start:start + size]
                     if len({item[0] for item in span}) != size:
@@ -193,6 +197,8 @@ def extract_transcript_ideas(turns: list[dict[str, Any]]) -> list[dict[str, Any]
                     if not has_entity:
                         continue
                     phrase = tuple(sorted(item[0] for item in span))
+                    if phrase == ("state", "united"):
+                        continue
                     surface = " ".join(item[1] for item in span)
                     bucket = grouped.setdefault(phrase, {"count": 0, "turn_ids": [], "surfaces": defaultdict(int)})
                     bucket["count"] += 1
@@ -321,7 +327,7 @@ def evaluate_headline_idea_overlap(
         "report_type": "headline-idea-to-transcript-lexical-overlap",
         "task": "measure whether pre-event headline phrases are echoed near-literally in the target speaker transcript",
         "idea_source": "open-vocabulary 1-3 word phrases from dated context headlines; no hand-written topic taxonomy",
-        "target_idea_source": "target-speaker transcript-derived 2-4 term phrases anchored on a recognized entity/proper-name token, ranked by within-speech frequency and phrase length",
+        "target_idea_source": "target-speaker transcript-derived 2-3 term phrases anchored on a recognized entity/proper-name token, with bracketed stage cues removed",
         "outcome_source": "target-speaker transcript turns; headline candidate mentions require all normalized terms within an eight-token window in one turn; target phrase coverage checks the same window in one headline",
         "normalization": {"stopword_filter": True, "simple_plural_normalization": True, "nationality_aliases": ALIASES, "max_span_tokens": 8},
         "ranking": "source count + publisher diversity + recency heuristic; score is not a probability",
