@@ -150,7 +150,7 @@ def extract_headline_ideas(sources: list[dict[str, Any]], as_of: str, *, max_ter
                     for index in range(size - 1)
                 ):
                     continue
-                phrase = tuple(item[0] for item in span)
+                phrase = tuple(sorted(item[0] for item in span))
                 if not _is_issue_phrase(phrase):
                     continue
                 if size == 1 and len(phrase[0]) < 5:

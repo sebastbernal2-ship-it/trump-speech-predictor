@@ -101,13 +101,14 @@ def main(argv: list[str] | None = None) -> int:
     context.add_argument("--output", default="data/world_context.jsonl")
 
     context_news_search = sub.add_parser(
-        "context-news-search", help="collect retrospective speaker-name-only Google News candidates for an exploratory audit"
+        "context-news-search", help="collect retrospective Google News candidates using metadata-only query profiles"
     )
     context_news_search.add_argument("--input", default="data/rollcall-context-snapshots-v1.jsonl")
     context_news_search.add_argument("--speaker", default="Donald Trump")
     context_news_search.add_argument("--lookback-days", type=int, default=30)
     context_news_search.add_argument("--delay", type=float, default=0.4)
     context_news_search.add_argument("--timeout", type=float, default=25)
+    context_news_search.add_argument("--profile", choices=("speaker-name", "speaker-topic-families"), default="speaker-name")
     context_news_search.add_argument("--output", default="data/rollcall-context-snapshots-trump-name-v2.jsonl")
 
     context_theme_eval = sub.add_parser(
@@ -421,7 +422,7 @@ def main(argv: list[str] | None = None) -> int:
 
             result = collect_speaker_news_snapshots(
                 args.input, args.output, speaker=args.speaker, lookback_days=args.lookback_days,
-                delay_seconds=args.delay, timeout_seconds=args.timeout,
+                delay_seconds=args.delay, timeout_seconds=args.timeout, profile=args.profile,
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
         elif args.command == "context-theme-evaluate":
