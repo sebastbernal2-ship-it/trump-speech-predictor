@@ -1,0 +1,33 @@
+# Idea-layer record contracts
+
+The Python validators live in `speechprefix/idea_layer/contracts.py`; tests in `tests/test_idea_layer_contracts.py` are the executable examples. Records are JSON objects; append immutable snapshots to local JSONL/artifact files rather than editing old forecasts.
+
+## 1. Source ledger item
+
+Required fields:
+
+- `schema_version: 1`, `record_type: "idea-layer-source"`
+- `source_id`: stable local ID; never recycle it
+- `source_type`: `news`, `trump_post`, `event_metadata`, or `other_primary_source`
+- `source_url`, `publisher`, `content`, `content_sha256`, `reuse_terms`
+- `published_at`, `observed_at`: timezone-aware timestamps; observed cannot precede published
+- `availability_status`: `verified_before_cutoff`, `not_verified`, or `unknown`
+- For `trump_post`, also keep `account` and platform `post_id`
+
+The content hash must match the stored content. `verified_before_cutoff` is an explicit provenance assertion—not proof that the publisher’s timestamp is true. Only source items with verified status and both timestamps strictly before the forecast cutoff can be used.
+
+## 2. Event manifest
+
+Use `schema_version: 1`, `record_type: "idea-layer-event"`, a stable `event_id`, timezone-aware `event_start_at` and `prediction_cutoff_at`, and `event_metadata_source_ids`. The cutoff must strictly precede the scheduled start. `known_context` is a list of `{fact_id, fact, source_ids}`; every fact cites its source records. Do not put transcripts, post-event descriptions, or target labels in the manifest.
+
+## 3. Frozen pre-speech forecast
+
+Use `schema_version: 1`, `record_type: "idea-layer-forecast"`, a unique `forecast_id`, `input_snapshot_sha256`, `event_id`, the manifest’s exact `prediction_cutoff_at`, `generated_at` (strictly before cutoff), `model_version`, `input_source_ids`, and ordered `candidates`.
+
+Each candidate has a stable `idea_id`, readable `idea`, unique positive `rank`, numeric `score`, `score_kind`, and nonempty `evidence_source_ids` drawn from the frozen input set. `score_kind: "ranking_score"` is the default. `score_kind: "probability"` additionally requires a calibration report reference. Every event-metadata and known-context source must be in the frozen inputs. Forecast records reject transcript/outcome fields.
+
+## 4. Append-only in-speech update
+
+Use `schema_version: 1`, `record_type: "idea-layer-update"`, `event_id`, `forecast_id`, `updated_at`, the unique `observed_turn_ids` available at that update, and `changes`. Each change contains `idea_id`, an action (`added`, `raised`, `lowered`, `removed`, `unchanged`), and optional `evidence_turn_ids`. A cited turn must be in the visible-turn list supplied to the validator. Save each update as a new record; never rewrite the initial forecast.
+
+The source ledger is the input to pre-speech inference. The completed transcript and post-event idea annotations belong to a separate outcome/evaluation store and must not be passed into forecast generation.

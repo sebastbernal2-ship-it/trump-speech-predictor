@@ -1,6 +1,12 @@
 # Architecture sketch
 
-## Implemented first
+## Primary direction: standalone event-specific idea layer
+
+The first product boundary is `speechprefix/idea_layer/`: a pre-speech idea ranker grounded in time-verified current news, Trump’s attributable public posts, and known event details, with append-only updates from already-observed speech turns. It must work without word-generation or speech-plan models. Its current `contracts.py` validates evidence provenance, strict cutoffs, candidate citations, and turn visibility; retrieval, ranking, and update algorithms remain unimplemented. The canonical scope and evaluation plan are in `docs/idea-layer/README.md`.
+
+Existing components below are separate research prototypes and baselines. They are not automatically on the critical path for the idea layer.
+
+## Existing continuation prototype
 
 `NGramModel` is a transparent local baseline: corpus text -> tokenizer -> context-count tables -> next-word distribution. The CLI supports model training, prefix scoring, interactive chunk-by-chunk updates, and a simple held-out continuation evaluation.
 

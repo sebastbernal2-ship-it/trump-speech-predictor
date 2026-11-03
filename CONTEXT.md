@@ -1,6 +1,14 @@
 # Speech forecasting
 
-This project separates pre-speech forecasting, ordinary transcript continuation, and question-anchored prediction of a target speaker's next response. Time-coded turns preserve who spoke and what was observable at each prediction point.
+## Primary project direction: the standalone idea layer
+
+The first goal is event-specific ideas, not wording: rank what Trump may address before a scheduled speech using current, timestamped news, his attributable public posts, and event details known by the cutoff; then append updates using only speech turns already observed. This layer must stay independent of continuation, speech generation, and Q&A response models. Its package boundary is `speechprefix/idea_layer/`; see `docs/idea-layer/README.md`.
+
+Use an exact prediction cutoff for every forecast. Evidence published or first observed at/after that cutoff is ineligible. Every candidate keeps source citations. A transcript outcome may be used only after the event to evaluate the frozen forecast, never to create its inputs.
+
+The project keeps three concepts distinct: a forecast idea is a model candidate; an outcome annotation is a source-attributed transcript interpretation (which may be assistant-generated and weak); semantic gold requires an explicitly stronger review process. Never describe AI-generated outcome annotations as human-reviewed or use them to claim semantic accuracy.
+
+Continuation, full-speech planning, and question-anchored response prediction remain separate research tasks, not part of the first idea-layer deliverable. Time-coded turns preserve what was observable at each live-update point.
 
 ## Language
 
