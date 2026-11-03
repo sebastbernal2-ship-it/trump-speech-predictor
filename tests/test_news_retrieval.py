@@ -39,6 +39,25 @@ class NewsRetrievalTests(unittest.TestCase):
             self.assertTrue(row["exploratory_only"])
             self.assertNotIn("target_ideas", row)
 
+    def test_topic_family_profile_uses_fixed_queries_and_deduplicates_sources(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "events.jsonl"
+            output = root / "snapshots.jsonl"
+            source.write_text(json.dumps({"event_id": "event-1", "event_date": "2024-10-21"}) + "\n")
+            responses = [BytesIO(RSS) for _ in range(5)]
+            with patch("speechprefix.news_retrieval.urlopen", side_effect=responses) as mocked:
+                result = collect_speaker_news_snapshots(
+                    source, output, profile="speaker-topic-families", delay_seconds=0,
+                )
+            row = json.loads(output.read_text().strip())
+            self.assertEqual(mocked.call_count, 5)
+            self.assertEqual(len(row["queries"]), 5)
+            self.assertEqual(result["candidate_source_count"], 1)
+            self.assertEqual(len(row["candidate_sources"][0]["query_purposes"]), 5)
+            self.assertIn("no transcript or target-idea terms", row["query_policy"])
+            self.assertTrue(any("economy OR jobs" in query["query"] for query in row["queries"]))
+
     def test_refuses_to_overwrite_without_making_a_request(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

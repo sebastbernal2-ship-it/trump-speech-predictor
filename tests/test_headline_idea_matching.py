@@ -35,8 +35,17 @@ class HeadlineIdeaMatchingTests(unittest.TestCase):
             "source_url": "https://example.test/tax-tariff",
             "publisher": "Example News",
         }], "2024-10-21")
-        idea = next(item for item in ideas if item["idea_id"] == "tax tariff")
+        idea = next(item for item in ideas if item["idea_id"] == "tariff tax")
         self.assertEqual(idea["candidate_idea"], "Taxes and tariffs")
+
+    def test_merges_reordered_headline_phrases_and_accumulates_sources(self):
+        ideas = extract_headline_ideas([
+            {"title": "Ukraine war escalates", "published_at": "2024-10-18", "url": "source-1"},
+            {"title": "War in Ukraine reaches new phase", "published_at": "2024-10-19", "url": "source-2"},
+        ], "2024-10-21")
+        idea = next(item for item in ideas if item["idea_id"] == "ukraine war")
+        self.assertEqual(idea["source_count"], 2)
+        self.assertEqual(len(idea["supporting_sources"]), 2)
 
     def test_mines_ukraine_war_as_a_cited_transcript_idea(self):
         ideas = extract_transcript_ideas([{
