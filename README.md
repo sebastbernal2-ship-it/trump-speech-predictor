@@ -1,12 +1,16 @@
 # SpeechPrefix
 
-An offline research prototype for three separate tasks: forecasting before a speech, continuing an observed transcript, and predicting a target speaker's response as a time-coded event unfolds.
+## Primary direction: an event-specific idea forecast
 
-This is an experiment, not a promise to reproduce a future speech. Models return candidate probabilities estimated from training data; treat them as uncalibrated until evaluation says otherwise. No live audio or transcript feed is included.
+The project is being reorganized around one standalone layer: **before a scheduled speech, rank the ideas Trump is likely to address using current, time-verified news, his recent public posts, and details known about that event.** As the speech unfolds, this layer may update its idea ranking from turns already observed. It does not generate wording or a whole speech.
 
-## Current prototype
+The current-events idea system is **not implemented end to end yet**: no prospective evidence stream or Trump-post archive is connected, and no clean prospective accuracy result exists. The source/history rankers and speech-generation experiments below are earlier prototypes, not evidence that this goal has been achieved. See [`docs/idea-layer/README.md`](docs/idea-layer/README.md) for the scope, evidence rules, repository boundary, and next steps.
 
-The project now includes **SpeechPlan-H**, a from-scratch hierarchical-code planner joined to a GPT-style autoregressive decoder by cross-attention. It does not load GPT-2 or Stanford NCM weights. It is trained locally on the chronological training split. N-gram, standalone GPT-2/NCM, and the earlier candidate-fusion path are separate comparison baselines. Pre-speech phrase forecasting remains a separate task.
+This is a research project, not a promise to reproduce a future speech. Ranking scores are not probabilities unless calibrated; all forecasts must preserve source citations and an exact prediction cutoff. No live audio/transcript feed is currently included.
+
+## Existing prototypes (separate from the primary direction)
+
+The repository also contains **SpeechPlan-H**, a from-scratch hierarchical-code planner joined to a GPT-style autoregressive decoder by cross-attention, plus n-gram, standalone GPT-2/NCM, continuation, history-only issue, and retrospective context experiments. These remain separate baselines/prototypes and are not dependencies of the standalone idea layer.
 
 ## Requirements
 
@@ -59,7 +63,8 @@ For human-reviewed semantic plans, pass `--plans data/rollcall-speech-plans.json
 
 ## Prediction tasks, separate evaluations
 
-- **Pre-speech forecast:** Given only historical speeches, rank recurring phrases likely to appear in the next speech. The initial baseline uses dated JSONL metadata and walk-forward evaluation. Separate context-to-theme and source-derived candidate diagnostics use weak labels; neither beat the prevalence baseline on the two-event holdout. A metadata audit found none of the 20 context snapshots eligible for strict prospective evaluation. Headline candidate scores are heuristics, not probabilities. A blinded theme-annotation packet generator is available, but no human review has been completed. These are not deployable semantic topic models; see `docs/context-theme-forecast.md`.
+- **Standalone idea layer (primary direction):** combine time-verified current events, Trump’s attributable recent posts, and pre-event details to rank likely speech ideas; append evidence-grounded updates as visible transcript turns arrive. The package boundary is `speechprefix/idea_layer/`. Its current code validates provenance and leakage only; retrieval, candidate ranking, and live updates are still to be built. No prospective sample or reliable accuracy result exists. See `docs/idea-layer/README.md`.
+- **Legacy pre-speech baselines:** the history ranker predicts recurring extracted phrases; the retrospective context tools retrieve source-supported phrases. They do not establish that Trump will discuss a current event. Existing snapshot audits found no strict prospective sample. Treat their scores as exploratory weak-label diagnostics, not evidence of the primary idea layer’s accuracy; see `docs/context-theme-forecast.md` and `docs/evaluation.md`.
 - **Continuation:** Given an observed transcript prefix, predict its next word(s). Replay held-out speeches sequentially and score each prediction before revealing the next word.
 - **In-speech plan path:** Given the same kind of observed prefix, predict one theme → section → talking-point path. Keep weak pseudo-label diagnostics separate from semantic idea metrics; human-reviewed plans are required for semantic accuracy.
 - **Question-anchored response:** Given the observed turns and a reviewer-selected question/prompt trigger in a time-coded event, predict the target speaker's likely ideas and exact words. Triggers can include follow-ups and the target speaker's own clarifying questions. Score ideas separately from wording and track whether another speaker responds or the target does not.
