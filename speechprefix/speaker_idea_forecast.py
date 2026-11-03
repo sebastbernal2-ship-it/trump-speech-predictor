@@ -21,20 +21,22 @@ DEFAULT_TOP_K = (4, 10, 25)
 def _rank_history(
     history: list[dict[str, Any]], as_of: date, *, half_life_days: int | None,
     window_days: int | None = None,
-) -> tuple[list[str], dict[str, float], dict[str, Counter[str]]]:
+) -> tuple[list[str], dict[str, float], dict[str, Counter[str]], float]:
     scores: Counter[str] = Counter()
     surfaces: dict[str, Counter[str]] = {}
+    total_weight = 0.0
     for event in history:
         age_days = (as_of - event["date"]).days
         if window_days is not None and age_days > window_days:
             continue
         weight = 1.0 if half_life_days is None else math.exp(-math.log(2) * age_days / half_life_days)
+        total_weight += weight
         for idea in event["ideas"]:
             idea_id = idea["idea_id"]
             scores[idea_id] += weight
             surfaces.setdefault(idea_id, Counter())[idea["candidate_idea"]] += idea["occurrence_count"]
     ranked = sorted(scores, key=lambda idea_id: (-scores[idea_id], idea_id))
-    return ranked, dict(scores), surfaces
+    return ranked, dict(scores), surfaces, total_weight
 
 
 def _event_metrics(prediction: list[str], target: set[str], top_k: tuple[int, ...]) -> dict[str, float]:
@@ -60,7 +62,7 @@ def _evaluate_period(
         # All events on one date share the same history; same-day outcomes are not observable yet.
         history = [event for event in events if event["date"] < day]
         targets = [event for event in events if event["date"] == day]
-        ranking, scores, history_surfaces = _rank_history(
+        ranking, scores, history_surfaces, total_weight = _rank_history(
             history, day, half_life_days=half_life_days, window_days=window_days,
         )
         for target_event in targets:
@@ -72,13 +74,27 @@ def _evaluate_period(
                 "metrics": metric,
             }
             if include_predictions:
+                rank_by_idea = {idea_id: rank for rank, idea_id in enumerate(ranking, 1)}
+                target_diagnostics = [
+                    {
+                        "idea": idea["candidate_idea"],
+                        "idea_id": idea["idea_id"],
+                        "supporting_turn_ids": idea["supporting_turn_ids"],
+                        "history_seen_before": idea["idea_id"] in scores,
+                        "history_rank": rank_by_idea.get(idea["idea_id"]),
+                        "history_score": round(scores.get(idea["idea_id"], 0.0), 6),
+                    }
+                    for idea in target_event["ideas"]
+                ]
                 event_result.update({
                     "target_issue_phrase_count": len(target_event["idea_ids"]),
                     "target_idea_turn_ids": target_event["idea_turn_ids"],
+                    "target_idea_diagnostics": target_diagnostics,
                     "top_10_predictions": [
                         {"rank": rank, "idea_id": idea_id,
                          "idea": max(history_surfaces[idea_id].items(), key=lambda item: (item[1], item[0]))[0],
                          "history_score": round(scores[idea_id], 6),
+                         "weighted_history_prevalence": round(scores[idea_id] / total_weight, 6) if total_weight else 0.0,
                          "matched_target": idea_id in target_event["idea_ids"],
                          "supporting_turn_ids": target_event["idea_turn_ids"].get(idea_id, [])}
                         for rank, idea_id in enumerate(ranking[:10], 1)
@@ -237,6 +253,15 @@ def evaluate_speaker_idea_forecast(
         fixed_window_test_metrics[str(window_days)] = test_metrics
         fixed_window_test_rows[str(window_days)] = test_rows
     bootstrap_metrics = ("precision_at_4", "precision_at_10", "recall_at_10", "ndcg_at_10")
+    from .speaker_idea_diagnostics import (
+        analyze_issue_forecast_errors,
+        evaluate_history_prevalence_calibration,
+    )
+
+    test_error_analysis = analyze_issue_forecast_errors(test_predictions, k=10)
+    calibration_diagnostic = evaluate_history_prevalence_calibration(
+        events, test_dates, half_life_days=selected_half_life,
+    )
     test_metric_differences = {
         "recency_weighted_vs_lifetime": _paired_cluster_bootstrap(
             test_predictions, lifetime_test_rows, metrics=bootstrap_metrics,
@@ -251,7 +276,7 @@ def evaluate_speaker_idea_forecast(
     }
     test_start = min(test_dates)
     report: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "evaluation_type": "walk-forward-speaker-history-issue-phrase-ranking",
         "model_family": "exponentially recency-weighted issue phrase prevalence",
         "model_version": "speaker-idea-recency-v1",
@@ -290,6 +315,8 @@ def evaluate_speaker_idea_forecast(
             "fixed_day_window_baselines": fixed_window_test_metrics,
         },
         "test_metric_differences": test_metric_differences,
+        "test_error_analysis_at_10": test_error_analysis,
+        "test_probability_diagnostic": calibration_diagnostic,
         "test_predictions": test_predictions,
         "limitations": [
             "Test outcomes are automatic phrase matches under a limited lexicon, not human-reviewed semantic ideas.",
