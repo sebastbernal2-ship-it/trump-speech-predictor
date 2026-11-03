@@ -147,6 +147,7 @@ def export_adjudicated_theme_labels(
             "schema_version": 1,
             "event_id": identity["event_id"],
             "event_date": identity["event_date"],
+            "source_url": identity.get("source_url"),
             "review_item_id": item_id,
             "source_record_sha256": identity["source_record_sha256"],
             "target_transcript_sha256": identity["target_transcript_sha256"],
