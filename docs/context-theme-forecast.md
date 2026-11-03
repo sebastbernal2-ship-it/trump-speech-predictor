@@ -59,6 +59,12 @@ The pass covers all 20 transcript/context pairs. Examples include **Eminent doma
 
 In the latest rule-filtered report, only 12 headline-derived multiword candidates survived across 20 events, and 1 was echoed in its transcript (8.3%; too small a denominator for a useful precision estimate). The top-10 transcript phrase inventory had 1 headline match among 167 phrases (0.6%); across top 50, 1/243 (0.4%). These are literal phrase-match diagnostics under the current filter—not semantic accuracy or prospective performance. The restrictive lexicon improves readability at the cost of unknown recall. Context snapshots are retrospective, and publication times are day-level. Full cited output is in the ignored artifact `data/rollcall-transcript-idea-audit-v17.json`.
 
+## Speaker-name retrieval diagnostic
+
+`speechprefix context-news-search` collects a second retrieval baseline from date-bounded Google News RSS queries using only the speaker name and event dates—no transcript or extracted target ideas. The 20-event run used 30-day windows and retrieved 987 candidates. The resulting local snapshot is `data/rollcall-context-snapshots-trump-name-v2.jsonl`; query strings, retrieval timestamps, source dates, and response hashes are retained. Re-run with a new `--output` path; existing artifacts are never overwritten.
+
+Compared with the original location-plus-generic-national-news snapshots, the speaker-name query raised literal matching of ranked headline phrases from 1/12 to 7/29 and headline coverage of top-10 transcript phrases from 1/167 (0.6%) to 7/167 (4.2%). This is an exploratory retrieval diagnostic, not a prospective forecast: the searches ran after the events against today's index. One counted “American workers” match came from the UAW organization's name, illustrating that literal hits can be spurious. A clearer pre-event source in the 2024-10-21 search was Tax Foundation's “Trump’s Tax and Tariff Ideas: Details & Analysis” (2024-10-14); it supports a broad issue connection, but not the transcript's more specific “tax overtime” phrase. The report is `data/rollcall-transcript-idea-audit-trump-name-v4.json` (ignored locally).
+
 ## Next gates
 
 1. Improve and relevance-audit retrieval without consulting transcripts; verify event metadata and location were available before each event.

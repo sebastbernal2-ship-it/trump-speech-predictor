@@ -28,6 +28,16 @@ class HeadlineIdeaMatchingTests(unittest.TestCase):
         self.assertEqual(matches[0]["turn_id"], "turn-1")
         self.assertIn("war in Ukraine", matches[0]["matched_text"])
 
+    def test_extracts_tax_and_tariff_context_from_speaker_news_headline(self):
+        ideas = extract_headline_ideas([{
+            "title": "Trump’s Tax and Tariff Ideas: Details and Analysis",
+            "published_at": "2024-10-14",
+            "source_url": "https://example.test/tax-tariff",
+            "publisher": "Example News",
+        }], "2024-10-21")
+        idea = next(item for item in ideas if item["idea_id"] == "tax tariff")
+        self.assertEqual(idea["candidate_idea"], "Taxes and tariffs")
+
     def test_mines_ukraine_war_as_a_cited_transcript_idea(self):
         ideas = extract_transcript_ideas([{
             "turn_id": "turn-ukraine",

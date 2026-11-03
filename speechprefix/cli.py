@@ -100,6 +100,16 @@ def main(argv: list[str] | None = None) -> int:
     context.add_argument("--limit", type=int, default=10)
     context.add_argument("--output", default="data/world_context.jsonl")
 
+    context_news_search = sub.add_parser(
+        "context-news-search", help="collect retrospective speaker-name-only Google News candidates for an exploratory audit"
+    )
+    context_news_search.add_argument("--input", default="data/rollcall-context-snapshots-v1.jsonl")
+    context_news_search.add_argument("--speaker", default="Donald Trump")
+    context_news_search.add_argument("--lookback-days", type=int, default=30)
+    context_news_search.add_argument("--delay", type=float, default=0.4)
+    context_news_search.add_argument("--timeout", type=float, default=25)
+    context_news_search.add_argument("--output", default="data/rollcall-context-snapshots-trump-name-v2.jsonl")
+
     context_theme_eval = sub.add_parser(
         "context-theme-evaluate", help="evaluate a weak, chronological context-to-theme ranking baseline"
     )
@@ -405,6 +415,15 @@ def main(argv: list[str] | None = None) -> int:
             records = search_documents(args.as_of, args.query, args.limit, args.lookback_days)
             added = append_context(args.output, records)
             print(f"Found {len(records)} pre-event documents; appended {added} new records to {args.output}.")
+        elif args.command == "context-news-search":
+            import json
+            from .news_retrieval import collect_speaker_news_snapshots
+
+            result = collect_speaker_news_snapshots(
+                args.input, args.output, speaker=args.speaker, lookback_days=args.lookback_days,
+                delay_seconds=args.delay, timeout_seconds=args.timeout,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
         elif args.command == "context-theme-evaluate":
             import json
             from .context_theme_evaluation import evaluate_context_theme_ranker
