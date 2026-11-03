@@ -7,6 +7,8 @@ from speechprefix.headline_idea_matching import (
     evaluate_headline_idea_overlap,
     extract_headline_ideas,
     extract_transcript_ideas,
+    issue_phrase_lexicon_sha256,
+    ISSUE_PHRASE_EXTRACTOR_VERSION,
     match_idea_to_turns,
 )
 
@@ -109,6 +111,24 @@ class HeadlineIdeaMatchingTests(unittest.TestCase):
         self.assertNotIn("karen so", idea_ids)
         self.assertNotIn("state united", idea_ids)
 
+    def test_expanded_curated_phrases_capture_energy_farm_and_bounded_issue_terms(self):
+        ideas = extract_transcript_ideas([{
+            "turn_id": "turn-expanded-issues",
+            "text": (
+                "Electricity prices and utility bills will fall as AI data centers build power generation. "
+                "Energy demand is rising. We promised farm relief, a new Farm Bill, estate tax relief, "
+                "farm equipment, and food prices. Voter photo ID is required. Iran, including a nuclear weapon, "
+                "is a serious issue."
+            ),
+        }])
+        idea_ids = {idea["idea_id"] for idea in ideas}
+        self.assertTrue({
+            "electricity price", "bill utility", "center data", "generation power", "demand energy",
+            "farm relief", "bill farm", "estate tax", "equipment farm", "food price", "id voter", "iran nuclear",
+        }.issubset(idea_ids))
+        self.assertEqual(ISSUE_PHRASE_EXTRACTOR_VERSION, "compact-issue-phrases-v2")
+        self.assertEqual(len(issue_phrase_lexicon_sha256()), 64)
+
     def test_does_not_combine_terms_across_separate_turns(self):
         idea = {"normalized_terms": ["ukraine", "war"]}
         turns = [
@@ -143,6 +163,8 @@ class HeadlineIdeaMatchingTests(unittest.TestCase):
             }) + "\n", encoding="utf-8")
             report = evaluate_headline_idea_overlap(snapshots, events, output_path=output, top_k=(50,))
             self.assertEqual(report["summary_by_top_k"]["top_50"]["events"], 1)
+            self.assertEqual(report["phrase_extractor"]["version"], ISSUE_PHRASE_EXTRACTOR_VERSION)
+            self.assertEqual(len(report["phrase_extractor"]["lexicon_sha256"]), 64)
             candidate = next(item for item in report["events"][0]["top_ideas"] if item["idea_id"] == "ukraine war")
             self.assertTrue(candidate["mentioned_by_target"])
             self.assertEqual(candidate["supporting_sources"][0]["query_purposes"], ["foreign_policy"])

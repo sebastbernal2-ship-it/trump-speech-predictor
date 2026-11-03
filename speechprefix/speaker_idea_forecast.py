@@ -11,7 +11,12 @@ import random
 from typing import Any
 
 from .context_theme_ranker import read_jsonl
-from .headline_idea_matching import _target_turns, extract_transcript_ideas
+from .headline_idea_matching import (
+    ISSUE_PHRASE_EXTRACTOR_VERSION,
+    _target_turns,
+    extract_transcript_ideas,
+    issue_phrase_lexicon_sha256,
+)
 
 
 HALF_LIFE_GRID_DAYS: tuple[int | None, ...] = (30, 90, 180, 365, 730, None)
@@ -278,12 +283,16 @@ def evaluate_speaker_idea_forecast(
     }
     test_start = min(test_dates)
     report: dict[str, Any] = {
-        "schema_version": 4,
+        "schema_version": 5,
         "evaluation_type": "walk-forward-speaker-history-issue-phrase-ranking",
         "model_family": "exponentially recency-weighted issue phrase prevalence",
         "model_version": "speaker-idea-recency-v1",
         "task": "rank issue phrases likely to recur in a Trump speech from strictly earlier speech-candidate transcripts",
         "target_policy": "automatic compact issue phrases mined from target-speaker turns; not semantic gold",
+        "target_extractor": {
+            "version": ISSUE_PHRASE_EXTRACTOR_VERSION,
+            "lexicon_sha256": issue_phrase_lexicon_sha256(),
+        },
         "history_policy": "prior event dates only; all events on the target date are excluded",
         "selection_policy": "choose half-life with highest validation mean nDCG@10; ties prefer longer half-life",
         "config": {

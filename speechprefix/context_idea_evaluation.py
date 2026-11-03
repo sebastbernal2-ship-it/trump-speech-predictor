@@ -8,7 +8,13 @@ from pathlib import Path
 from typing import Any
 
 from .context_theme_ranker import read_jsonl
-from .headline_idea_matching import _target_turns, extract_headline_ideas, extract_transcript_ideas
+from .headline_idea_matching import (
+    ISSUE_PHRASE_EXTRACTOR_VERSION,
+    _target_turns,
+    extract_headline_ideas,
+    extract_transcript_ideas,
+    issue_phrase_lexicon_sha256,
+)
 
 
 def _metrics(predictions: list[list[str]], targets: list[set[str]], k: int) -> dict[str, float | int]:
@@ -166,7 +172,7 @@ def evaluate_context_idea_candidates(
             },
         })
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "evaluation_type": "chronological-context-idea-candidates-vs-speaker-history",
         "model_family": "source-supported compact issue-phrase ranker",
         "model_version": "topic-family-retrieval-v1",
@@ -174,6 +180,10 @@ def evaluate_context_idea_candidates(
         "context_ranking": "source count, publisher diversity, and recency heuristic; not trained or calibrated",
         "history_baseline": "distinct training events containing each automatically extracted issue phrase",
         "target_policy": "automatically mined, lexicon-filtered transcript issue phrases with cited turns; not human semantic gold",
+        "phrase_extractor": {
+            "version": ISSUE_PHRASE_EXTRACTOR_VERSION,
+            "lexicon_sha256": issue_phrase_lexicon_sha256(),
+        },
         "context_policy": "all source dates are strictly before the event date; snapshots were retrieved retrospectively",
         "config": {"train_fraction": train_fraction, "validation_fraction": validation_fraction, "top_k": list(top_k)},
         "input_sha256": {
