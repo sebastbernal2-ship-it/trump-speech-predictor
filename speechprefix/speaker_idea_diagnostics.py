@@ -16,6 +16,7 @@ def analyze_issue_forecast_errors(
     k: int = 10,
 ) -> dict[str, Any]:
     counts: Counter[str] = Counter()
+    target_label_counts: Counter[int] = Counter()
     false_positive_counts: Counter[str] = Counter()
     false_negative_counts: Counter[str] = Counter()
     unseen_counts: Counter[str] = Counter()
@@ -44,6 +45,7 @@ def analyze_issue_forecast_errors(
         record = records_by_id.get(event["event_id"])
         target_turns = _target_turns(record) if record else []
         prepared_turns = _prepare_turns(target_turns) if record else []
+        target_label_counts[len(targets)] += 1
         counts["events"] += 1
         counts["macro_precision_sum"] += len(hits) / k
         counts["macro_recall_sum"] += len(hits) / len(targets) if targets else 0.0
@@ -142,6 +144,12 @@ def analyze_issue_forecast_errors(
         "cutoff": k,
         "events": event_count,
         "target_issue_phrase_instances": counts["target_issue_phrase_instances"],
+        "target_label_density": {
+            "events_by_label_count": {str(label_count): target_label_counts[label_count] for label_count in sorted(target_label_counts)},
+            "events_with_at_most_2_labels": sum(count for label_count, count in target_label_counts.items() if label_count <= 2),
+            "events_with_at_most_3_labels": sum(count for label_count, count in target_label_counts.items() if label_count <= 3),
+            "median_labels_per_event": median([label_count for label_count, count in target_label_counts.items() for _ in range(count)]) if target_label_counts else 0,
+        },
         "predicted_phrase_candidates": counts["predicted_phrase_candidates"],
         "exact_phrase_hits": counts["exact_phrase_hits"],
         "false_positive_phrase_candidates": counts["false_positive_phrase_candidates"],

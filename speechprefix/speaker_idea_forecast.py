@@ -278,7 +278,7 @@ def evaluate_speaker_idea_forecast(
     }
     test_start = min(test_dates)
     report: dict[str, Any] = {
-        "schema_version": 3,
+        "schema_version": 4,
         "evaluation_type": "walk-forward-speaker-history-issue-phrase-ranking",
         "model_family": "exponentially recency-weighted issue phrase prevalence",
         "model_version": "speaker-idea-recency-v1",
