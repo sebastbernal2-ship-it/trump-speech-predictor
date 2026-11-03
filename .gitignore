@@ -37,6 +37,7 @@ data/rollcall-theme-review-annotator-*.jsonl
 data/rollcall-theme-review-selection-*.jsonl
 data/rollcall-theme-review-taxonomy-*.jsonl
 data/rollcall-theme-review-extractor-reference-*.json
+data/rollcall-theme-review-assistant-drafts-*.json
 data/rollcall-theme-review-key-*.json
 data/rollcall-theme-review-agreement-*.json
 data/rollcall-theme-adjudication-*.jsonl
