@@ -28,17 +28,18 @@ GEO_ENTITY_TERMS = frozenset("ukraine ukrainian russia russian china chinese ira
 GEO_CONTEXT_ANCHORS = frozenset("war invasion attack peace hostage ceasefire trade tariff deal immigration immigrant migrant refugee job worker wage price security military nuclear oil gas energy border crime terrorism economy".split())
 PREFERRED_IDEA_LABELS = {
     tuple(sorted(key.split())): label for key, label in {
-        "trade deficit": "Trade deficit", "tax cut": "Tax cuts", "drug price": "Drug prices",
+        "trade deficit": "Trade deficit", "tax cut": "Tax cuts", "tax tariff": "Taxes and tariffs", "drug price": "Drug prices",
         "oil price": "Oil prices", "energy cost": "Energy costs", "healthcare cost": "Healthcare costs",
         "trade deal": "Trade deals", "iran deal": "Iran deal", "ukraine war": "Ukraine war",
         "iraq war": "Iraq war", "russia war": "Russia war", "israel war": "Israel war",
         "peace deal": "Peace deal", "china deficit": "China trade deficit", "russia ukraine": "Russia–Ukraine",
+        "america worker": "American workers", "african america": "African Americans",
     }.items()
 }
 KNOWN_MULTIWORD_IDEAS = {
     tuple(sorted(phrase.split())) for phrase in (
         "eminent domain", "social security", "second amendment", "america dream",
-        "health care", "civil right", "trade deficit", "gun right", "climate change",
+        "health care", "civil right", "trade deficit", "tax tariff", "gun right", "climate change",
         "north korea", "south korea", "middle east", "european union", "saudi arabia",
         "bay pigs", "african america", "american flag", "july fourth", "holy week",
         "jesus christ", "national anthem", "spangled banner", "republican party", "democrat party",
@@ -61,6 +62,8 @@ def _canonical(token: str) -> str:
         return word
     if word.endswith("'s"):
         word = word[:-2]
+    if word in STOPWORDS:
+        return word
     if word in ALIASES:
         return ALIASES[word]
     if len(word) > 4 and word.endswith("ies"):
