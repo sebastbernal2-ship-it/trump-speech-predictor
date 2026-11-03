@@ -20,6 +20,6 @@ External, untrained comparison backends are identified by immutable Hugging Face
 
 Model weights and transcript data remain local and ignored by Git. The registry tracks artifact identity, not artifact availability: preserve or back up each checkpoint if it must remain loadable. A registry entry whose local artifact is missing is a record of a run, not a recoverable model.
 
-## Semantic planner versions
+## Explicit plan-path model
 
-The explicit theme → section → talking-point planner is a separate future architecture and must receive its own architecture identifier and run entry. Draft plan annotations are not training labels. When the semantic model is trained, record the reviewed-plan dataset hash and keep its idea-prediction metrics separate from continuation and wording metrics.
+The explicit path model is `speechplan-explicit/plan-path-v2` (grammar-constrained decoding), separate from SpeechPlan-H. Earlier v1 artifacts retain their original unconstrained decoder. Each run records its label policy and both the source-event and plan-label hashes. `reviewed` accepts only human-reviewed plans. `weak-extractive` accepts only draft plans bearing the extractive-labeler source marker and is a separate weak-supervision experiment; its metrics are not semantic idea accuracy. Keep plan-path metrics separate from continuation and wording metrics.

@@ -10,6 +10,17 @@
 
 SpeechPlan-H continuation metrics use teacher-forced target windows and do not establish sequential online quality, calibration, or broad speech coverage. The current corpus contains mixed presidential documents, not a reviewed speech-only set. The n-gram CLI evaluator is separately minimal: it trains on all but the final record and scores that record. Both are prototype checks, not complete research protocols.
 
+## In-speech explicit plan-path prediction
+
+- Split by whole event dates before expanding plan labels into next-point examples.
+- For each talking point, predict its theme/section/point path from only turns that ended before the first supporting target turn begins.
+- Report plan-token loss, teacher-forced token accuracy, and greedy exact-path match; record the number of test examples included in greedy generation.
+- For `weak-extractive` runs, report these strictly as reproduction of transcript-keyword pseudo-labels, not semantic quality or wording quality. Keep them separate from reviewed-label runs, continuation, and question-anchored response metrics.
+- Use `explicit-plan-evaluate` to report per-level exact/keyword overlap, valid-path rate, output diversity, latency, event-progress slices, and majority/recent-prefix baselines.
+- Report semantic idea metrics only after the labels and output mapping are human-reviewed.
+
+Synthetic fixture scores are plumbing checks only. Real-transcript weak-label scores are still heuristic metrics; they do not establish idea-prediction accuracy. See `docs/hierarchical-speech-planner.md` for the model and plan schema.
+
 ## Question-anchored response prediction
 
 - Keep this task distinct from ordinary continuation and before-speech forecasting.
@@ -31,4 +42,4 @@ The initial target is occurrence of recurring two-to-four-word phrases in the ne
 - Add topic labels or event context only after specifying how they are sourced and annotated.
 - Document source, permission, and transcription uncertainty.
 
-Keep all three task results separate. Continuation scores do not establish pre-speech forecasting or question-anchored response quality.
+Keep all task results separate. Continuation scores do not establish pre-speech forecasting, explicit plan-path quality, or question-anchored response quality.
