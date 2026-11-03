@@ -45,6 +45,12 @@ In an exploratory replay of Henderson's frozen context, the v1 ranker (trained o
 
 On the same exploratory 16/2/2 split, source-evidence top-four achieved mean precision@4 **0.50** and mean recall@4 **0.417**, below training-prevalence top-four (**0.875** and **0.75**) on two test events. The unranked source candidate set had mean precision **0.833** but mean recall **0.417**, indicating that the lexical layer can retrieve plausible candidates while missing many weakly labeled families; its ranking did not beat the trivial baseline. All results use unreviewed sources and assistant-drafted labels and are not semantic accuracy estimates. A new immutable diagnostic is saved locally as `data/rollcall-context-candidate-evaluation-v2.json`; do not overwrite it. The v1 report is retained as a prior artifact from before tightening diplomacy/Israel matching.
 
+## Human annotation pilot
+
+`speechprefix theme-review-packet` creates two identical, independently fillable transcript-only copies for the 20-event pilot plus a separate event-ID key. The annotator forms omit event IDs, titles, dates, URLs, assistant draft labels, model predictions, and news context. Reviewers label every broad family present/absent/uncertain with turn citations, then enter up to five event-specific ideas with supporting turns and stance. Keep the key separate from the annotators and have each reviewer work independently. The local files are `data/rollcall-theme-review-annotator-{a,b}-v1.jsonl` and `data/rollcall-theme-review-key-v1.json` (all Git-ignored).
+
+These forms are not annotations or gold labels. This small, context-selected event sample is only suitable for testing instructions, schema, and inter-annotator agreement. The taxonomy also needs review; disagreement should be adjudicated before model evaluation. The candidate list is intentionally not shown to prevent anchoring; event-specific candidate recall will require a separate post-annotation adjudication step.
+
 ## Next gates
 
 1. Improve and relevance-audit retrieval without consulting transcripts; verify event metadata and location were available before each event.
