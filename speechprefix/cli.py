@@ -152,6 +152,22 @@ def main(argv: list[str] | None = None) -> int:
     idea_snapshot_freeze.add_argument("--output", required=True, help="new immutable input snapshot JSON")
     idea_snapshot_freeze.add_argument("--lookback-days", type=int, default=30)
 
+    idea_proposals_seal = sub.add_parser(
+        "idea-proposals-seal", help="seal provider-neutral idea proposals against one frozen snapshot"
+    )
+    idea_proposals_seal.add_argument("--snapshot", required=True)
+    idea_proposals_seal.add_argument("--input", required=True, help="JSON array of idea_id, idea, evidence_source_ids")
+    idea_proposals_seal.add_argument("--generator", required=True, help="human or provider/model identifier")
+    idea_proposals_seal.add_argument("--output", required=True, help="new immutable proposal-set JSON")
+
+    idea_rank = sub.add_parser(
+        "idea-rank", help="rank cited proposals with the transparent evidence-weighted baseline"
+    )
+    idea_rank.add_argument("--snapshot", required=True)
+    idea_rank.add_argument("--proposals", required=True, help="sealed proposal-set JSON")
+    idea_rank.add_argument("--output", required=True, help="new immutable forecast JSON")
+    idea_rank.add_argument("--model-version", default="evidence-weighted-baseline-v1")
+
     speaker_idea_eval = sub.add_parser(
         "speaker-idea-evaluate", help="walk-forward evaluate recurring issue-phrase forecasts from speaker history"
     )
@@ -600,6 +616,50 @@ def main(argv: list[str] | None = None) -> int:
                 args.manifest, args.ledger, args.output, lookback_days=args.lookback_days,
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
+        elif args.command == "idea-proposals-seal":
+            import json
+            from .idea_layer.ranker import make_idea_proposal_set
+
+            output_path = Path(args.output)
+            if output_path.exists():
+                raise FileExistsError(f"refusing to overwrite proposal set: {output_path}")
+            snapshot = json.loads(Path(args.snapshot).read_text(encoding="utf-8"))
+            proposals = json.loads(Path(args.input).read_text(encoding="utf-8"))
+            proposal_set = make_idea_proposal_set(snapshot, proposals, generator=args.generator)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with output_path.open("x", encoding="utf-8") as stream:
+                json.dump(proposal_set, stream, ensure_ascii=False, indent=2)
+                stream.write("\n")
+            print(json.dumps({
+                "output": args.output,
+                "proposal_set_id": proposal_set["proposal_set_id"],
+                "proposal_count": len(proposal_set["proposals"]),
+                "proposal_set_sha256": proposal_set["proposal_set_sha256"],
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "idea-rank":
+            import json
+            from .idea_layer.ranker import rank_pre_speech_ideas
+
+            output_path = Path(args.output)
+            if output_path.exists():
+                raise FileExistsError(f"refusing to overwrite forecast: {output_path}")
+            snapshot = json.loads(Path(args.snapshot).read_text(encoding="utf-8"))
+            proposal_set = json.loads(Path(args.proposals).read_text(encoding="utf-8"))
+            forecast = rank_pre_speech_ideas(
+                snapshot, proposal_set, model_version=args.model_version,
+            )
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with output_path.open("x", encoding="utf-8") as stream:
+                json.dump(forecast, stream, ensure_ascii=False, indent=2)
+                stream.write("\n")
+            print(json.dumps({
+                "output": args.output,
+                "forecast_id": forecast["forecast_id"],
+                "candidate_count": len(forecast["candidates"]),
+                "forecast_sha256": forecast["forecast_sha256"],
+                "model_version": forecast["model_version"],
+                "score_kind": "ranking_score",
+            }, ensure_ascii=False, indent=2))
         elif args.command == "speaker-idea-evaluate":
             import json
             from .speaker_idea_forecast import evaluate_speaker_idea_forecast
@@ -814,7 +874,6 @@ def main(argv: list[str] | None = None) -> int:
             }, ensure_ascii=False, indent=2))
         elif args.command == "context-snapshot-validate":
             import json
-            from pathlib import Path
             from .context_snapshots import validate_prospective_snapshot
 
             try:
@@ -824,7 +883,6 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(validate_prospective_snapshot(snapshot), ensure_ascii=False, indent=2))
         elif args.command == "context-snapshot-seal":
             import json
-            from pathlib import Path
             from .context_snapshots import seal_prospective_snapshot
 
             try:
