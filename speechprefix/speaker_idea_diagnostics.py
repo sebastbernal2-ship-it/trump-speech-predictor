@@ -6,10 +6,15 @@ from datetime import date
 from statistics import median
 from typing import Any
 
+from .headline_idea_matching import _match_prepared_idea, _prepare_turns, _target_turns
 from .speaker_idea_forecast import _rank_history
 
 
-def analyze_issue_forecast_errors(test_predictions: list[dict[str, Any]], *, k: int = 10) -> dict[str, Any]:
+def analyze_issue_forecast_errors(
+    test_predictions: list[dict[str, Any]], *,
+    transcript_records: list[dict[str, Any]] | None = None,
+    k: int = 10,
+) -> dict[str, Any]:
     counts: Counter[str] = Counter()
     false_positive_counts: Counter[str] = Counter()
     false_negative_counts: Counter[str] = Counter()
@@ -21,6 +26,11 @@ def analyze_issue_forecast_errors(test_predictions: list[dict[str, Any]], *, k: 
     false_raw: list[float] = []
     hit_prevalence: list[float] = []
     false_prevalence: list[float] = []
+    records_by_id = {item["event_id"]: item for item in transcript_records or []}
+    lexical_support_count = 0
+    lexical_support_checked = 0
+    lexical_support_examples: list[dict[str, Any]] = []
+    lexical_support_ideas: Counter[str] = Counter()
 
     for event in test_predictions:
         targets = {item["idea_id"]: item for item in event["target_idea_diagnostics"]}
@@ -31,6 +41,9 @@ def analyze_issue_forecast_errors(test_predictions: list[dict[str, Any]], *, k: 
         false_negatives = set(targets) - predicted_ids
         missed_unseen = {idea_id for idea_id in false_negatives if not targets[idea_id]["history_seen_before"]}
         missed_below = false_negatives - missed_unseen
+        record = records_by_id.get(event["event_id"])
+        target_turns = _target_turns(record) if record else []
+        prepared_turns = _prepare_turns(target_turns) if record else []
         counts["events"] += 1
         counts["macro_precision_sum"] += len(hits) / k
         counts["macro_recall_sum"] += len(hits) / len(targets) if targets else 0.0
@@ -57,6 +70,24 @@ def analyze_issue_forecast_errors(test_predictions: list[dict[str, Any]], *, k: 
                 false_raw.append(prediction["history_score"])
                 false_prevalence.append(prediction["weighted_history_prevalence"])
                 false_positive_counts[idea_id] += 1
+                if record:
+                    lexical_support_checked += 1
+                    matches = _match_prepared_idea(
+                        {"normalized_terms": idea_id.split()}, prepared_turns, 8,
+                    )
+                    if matches:
+                        lexical_support_count += 1
+                        lexical_support_ideas[idea_id] += 1
+                        if len(lexical_support_examples) < 20:
+                            lexical_support_examples.append({
+                                "event_id": event["event_id"],
+                                "event_date": event["event_date"],
+                                "title": record.get("title"),
+                                "idea": prediction["idea"],
+                                "idea_id": idea_id,
+                                "matching_turn_id": matches[0]["turn_id"],
+                                "matching_text": matches[0]["matched_text"],
+                            })
         for idea_id in false_negatives:
             target = targets[idea_id]
             displays.setdefault(idea_id, target["idea"])
@@ -70,6 +101,7 @@ def analyze_issue_forecast_errors(test_predictions: list[dict[str, Any]], *, k: 
             examples.append({
                 "event_id": event["event_id"],
                 "event_date": event["event_date"],
+                "title": record.get("title") if record else None,
                 "hit_count": len(hits),
                 "false_positive_count": len(false_positives),
                 "missed_target_count": len(false_negatives),
@@ -137,6 +169,14 @@ def analyze_issue_forecast_errors(test_predictions: list[dict[str, Any]], *, k: 
         "top_missed_target_phrases": top_phrases(false_negative_counts),
         "top_unseen_missed_phrases": top_phrases(unseen_counts),
         "top_seen_but_low_rank_misses": top_phrases(lower_rank_counts),
+        "unmatched_prediction_term_cooccurrence_audit": {
+            "checked_unmatched_candidates": lexical_support_checked,
+            "all_phrase_terms_found_within_eight_tokens_in_target_turn": lexical_support_count,
+            "fraction_with_literal_term_cooccurrence": lexical_support_count / lexical_support_checked if lexical_support_checked else 0.0,
+            "likely_extractor_omissions_by_phrase": top_phrases(lexical_support_ideas),
+            "examples": lexical_support_examples,
+            "interpretation": "Post-hoc check only: a phrase counted here has all normalized terms within one short target-speaker turn span but was not mined as a target label. No match does not rule out a semantic paraphrase.",
+        },
         "top_10_raw_score_diagnostics": {
             "exact_phrase_hits": score_summary(hit_raw, hit_prevalence),
             "unmatched_predictions": score_summary(false_raw, false_prevalence),

@@ -258,7 +258,9 @@ def evaluate_speaker_idea_forecast(
         evaluate_history_prevalence_calibration,
     )
 
-    test_error_analysis = analyze_issue_forecast_errors(test_predictions, k=10)
+    test_error_analysis = analyze_issue_forecast_errors(
+        test_predictions, transcript_records=raw_records, k=10,
+    )
     calibration_diagnostic = evaluate_history_prevalence_calibration(
         events, test_dates, half_life_days=selected_half_life,
     )
@@ -276,7 +278,7 @@ def evaluate_speaker_idea_forecast(
     }
     test_start = min(test_dates)
     report: dict[str, Any] = {
-        "schema_version": 2,
+        "schema_version": 3,
         "evaluation_type": "walk-forward-speaker-history-issue-phrase-ranking",
         "model_family": "exponentially recency-weighted issue phrase prevalence",
         "model_version": "speaker-idea-recency-v1",
