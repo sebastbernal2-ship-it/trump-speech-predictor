@@ -43,6 +43,7 @@ data/rollcall-context-idea-candidates-*.jsonl
 data/rollcall-context-idea-evaluation-*.json
 data/rollcall-context-issue-forecast-*.json
 data/rollcall-context-issue-evaluation-*.json
+data/rollcall-speaker-idea-evaluation-*.json
 data/rollcall-transcript-idea-audit-*.json
 checkpoints/
 .DS_Store
