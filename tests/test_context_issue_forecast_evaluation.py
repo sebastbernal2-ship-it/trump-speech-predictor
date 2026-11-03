@@ -74,6 +74,11 @@ class ContextIssueForecastEvaluationTests(unittest.TestCase):
                 forecast_path, snapshot_path, events_path, output_path=output_path, top_k=(1, 2),
             )
             self.assertEqual(report["event_id"], "event-target")
+            self.assertEqual(report["schema_version"], 2)
+            self.assertEqual(report["target_extractor"]["version"], "compact-issue-phrases-v2")
+            self.assertEqual(
+                report["forecast_candidate_extractor"]["version"], "compact-issue-phrases-v2",
+            )
             self.assertEqual(report["history_event_count"], 1)
             self.assertEqual(report["metrics"]["top_1"]["saved_context_forecast"]["recall_at_k"], 1.0)
             self.assertTrue(report["saved_context_candidates"][0]["matched_target"])

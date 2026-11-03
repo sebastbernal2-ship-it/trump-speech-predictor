@@ -491,6 +491,7 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps({
                 "output": args.output,
                 "selected_half_life_days": result["selected_half_life_days"],
+                "target_extractor": result["target_extractor"],
                 "split": split_summary,
                 "validation_metrics_by_half_life": result["validation_metrics_by_half_life"],
                 "validation_metrics_fixed_day_windows": result["validation_metrics_fixed_day_windows"],
@@ -563,6 +564,7 @@ def main(argv: list[str] | None = None) -> int:
                 "output": args.output,
                 "event_id": result["event_id"],
                 "prediction_cutoff_at": result["prediction_cutoff_at"],
+                "candidate_extractor": result["candidate_extractor"],
                 "candidate_count": result["candidate_count"],
                 "candidates": [
                     {"rank": item["rank"], "idea": item["idea"],
@@ -592,6 +594,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps({
                 "output": args.output,
+                "phrase_extractor": result["phrase_extractor"],
                 "split": result["split"],
                 "test_metrics": result["test_metrics"],
                 "limitations": result["limitations"],
@@ -610,6 +613,8 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps({
                 "output": args.output,
                 "event_id": result["event_id"],
+                "target_extractor": result["target_extractor"],
+                "forecast_candidate_extractor": result["forecast_candidate_extractor"],
                 "metrics": result["metrics"],
                 "limitations": result["limitations"],
             }, ensure_ascii=False, indent=2))

@@ -23,7 +23,7 @@ ALIASES = {
     "russian": "russia", "russians": "russia",
     "american": "america", "americans": "america",
 }
-ISSUE_ANCHORS = frozenset("war invasion attack peace hostage ceasefire border immigration immigrant migrant refugee job jobs worker wage price inflation trade deal tariff tax cut economy manufacturing pipeline energy oil gas climate pollution crime police gang drug dealer healthcare care medicare medicaid hospital school education religion christian family abortion gender media press censorship disaster hurricane flood water military spending weapon nuclear terrorism security election vote voter campaign democrat republican deficit amendment second social welfare civil right opioid wall crisis housing cost choice charter private world debt abuse".split())
+ISSUE_ANCHORS = frozenset("war invasion attack peace hostage ceasefire border immigration immigrant migrant refugee job jobs worker wage price inflation trade deal tariff tax cut economy manufacturing pipeline energy oil gas climate pollution crime police gang drug dealer healthcare care medicare medicaid hospital school education religion christian family abortion gender media press censorship disaster hurricane flood water military spending weapon nuclear terrorism security election vote voter campaign democrat republican deficit amendment second social welfare civil right opioid wall crisis housing cost choice charter private world debt abuse electricity utility agriculture farmer".split())
 GEO_ENTITY_TERMS = frozenset("ukraine ukrainian russia russian china chinese iran iranian israel israeli gaza hamas mexico iraq afghanistan afghan syria japan japanese taiwan europe european korea nato saudi arabia".split())
 GEO_CONTEXT_ANCHORS = frozenset("war invasion attack peace hostage ceasefire trade tariff deal immigration immigrant migrant refugee job worker wage price security military nuclear oil gas energy border crime terrorism economy".split())
 PREFERRED_IDEA_LABELS = {
@@ -34,6 +34,12 @@ PREFERRED_IDEA_LABELS = {
         "iraq war": "Iraq war", "russia war": "Russia war", "israel war": "Israel war",
         "peace deal": "Peace deal", "china deficit": "China trade deficit", "russia ukraine": "Russia–Ukraine",
         "america worker": "American workers", "african america": "African Americans",
+        "electricity price": "Electricity prices", "electricity cost": "Electricity costs",
+        "electricity grid": "Electricity grid", "utility bill": "Utility bills", "electric bill": "Electric bills",
+        "power plant": "Power plants", "power generation": "Power generation", "power grid": "Power grid",
+        "data center": "Data centers", "farm bill": "Farm Bill", "farm aid": "Farm aid",
+        "farm relief": "Farm relief", "farm equipment": "Farm equipment", "estate tax": "Estate tax",
+        "food price": "Food prices", "gasoline price": "Gasoline prices", "family farm": "Family farms",
     }.items()
 }
 KNOWN_MULTIWORD_IDEAS = {
@@ -52,6 +58,12 @@ KNOWN_MULTIWORD_IDEAS = {
         "oil price", "healthcare cost", "world war", "civil war", "war crime", "america family",
         "america military", "america manufacturing", "america voter", "america border", "iran economy",
         "iran deal", "trade china", "drug company", "drug dealer", "nuclear weapon", "vote republican",
+        "electricity price", "electricity cost", "electricity grid", "utility bill", "electric bill",
+        "electric rate", "power plant", "power generation", "power grid", "data center",
+        "energy demand", "energy policy", "ratepayer protection", "artificial intelligence",
+        "farm aid", "farm relief", "farm bill", "farm income", "farm equipment", "farm family",
+        "family farm", "estate tax", "food price", "gasoline price", "farm worker", "farm subsidy",
+        "agriculture policy", "china relation", "china relationship", "china visit",
     )
 }
 
@@ -75,6 +87,22 @@ def _canonical(token: str) -> str:
 
 def _tokens(text: str) -> list[tuple[str, str, int, int]]:
     return [(_canonical(match.group()), match.group(), match.start(), match.end()) for match in WORD.finditer(text)]
+
+
+ISSUE_PHRASE_EXTRACTOR_VERSION = "compact-issue-phrases-v2"
+
+
+def issue_phrase_lexicon_sha256() -> str:
+    payload = {
+        "issue_anchors": sorted(ISSUE_ANCHORS),
+        "geo_entity_terms": sorted(GEO_ENTITY_TERMS),
+        "geo_context_anchors": sorted(GEO_CONTEXT_ANCHORS),
+        "aliases": sorted(ALIASES.items()),
+        "stopwords": sorted(STOPWORDS),
+        "known_multiword_ideas": sorted(" ".join(item) for item in KNOWN_MULTIWORD_IDEAS),
+        "preferred_labels": sorted((" ".join(key), value) for key, value in PREFERRED_IDEA_LABELS.items()),
+    }
+    return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
 
 
 def _is_issue_phrase(phrase: tuple[str, ...]) -> bool:
@@ -288,23 +316,28 @@ def extract_transcript_ideas(turns: list[dict[str, Any]]) -> list[dict[str, Any]
             sentence = sentence.strip()
             words = [item for item in _tokens(sentence) if item[0] not in STOPWORDS and item[0] not in speech_fillers and len(item[0]) > 1]
             for start in range(len(words) - 1):
-                span = words[start:start + 2]
-                gap_words = _tokens(sentence[span[0][3]:span[1][2]])
-                if len(gap_words) > 1 or any(word[0] not in STOPWORDS for word in gap_words):
-                    continue
-                if span[0][0] == span[1][0]:
-                    continue
-                phrase = tuple(sorted(item[0] for item in span))
-                if not _is_issue_phrase(phrase):
-                    continue
-                if phrase in {("state", "united"), ("america", "state"), ("america", "united")}:
-                    continue
-                surface = _display_issue_phrase(span)
-                bucket = grouped.setdefault(phrase, {"count": 0, "turn_ids": [], "surfaces": defaultdict(int)})
-                bucket["count"] += 1
-                if turn_id not in bucket["turn_ids"]:
-                    bucket["turn_ids"].append(turn_id)
-                bucket["surfaces"][surface] += 1
+                for end in range(start + 1, min(start + 3, len(words))):
+                    span = [words[start], words[end]]
+                    if span[0][0] == span[1][0]:
+                        continue
+                    phrase = tuple(sorted(item[0] for item in span))
+                    if not _is_issue_phrase(phrase):
+                        continue
+                    gap_words = _tokens(sentence[span[0][3]:span[1][2]])
+                    if len(gap_words) > 1 or any(word[0] not in STOPWORDS for word in gap_words):
+                        # Permit bounded gaps only for explicitly curated concepts such as voter photo ID.
+                        if phrase not in KNOWN_MULTIWORD_IDEAS or len(gap_words) > 3:
+                            continue
+                        if sum(word[0] not in STOPWORDS for word in gap_words) > 1:
+                            continue
+                    if phrase in {("state", "united"), ("america", "state"), ("america", "united")}:
+                        continue
+                    surface = _display_issue_phrase(span)
+                    bucket = grouped.setdefault(phrase, {"count": 0, "turn_ids": [], "surfaces": defaultdict(int)})
+                    bucket["count"] += 1
+                    if turn_id not in bucket["turn_ids"]:
+                        bucket["turn_ids"].append(turn_id)
+                    bucket["surfaces"][surface] += 1
     return [
         {
             "idea_id": " ".join(phrase),
@@ -426,12 +459,16 @@ def evaluate_headline_idea_overlap(
             "target_phrase_headline_coverage": sum(idea["supported_by_pre_event_headline"] for idea in target_ideas) / len(target_ideas) if target_ideas else 0.0,
         }
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "report_type": "headline-idea-to-transcript-lexical-overlap",
         "task": "measure whether pre-event headline phrases are echoed near-literally in the target speaker transcript",
         "idea_source": "single issue-anchor terms and compact two-term issue phrases from dated headlines, gated by a small rule-based concept lexicon",
-        "target_idea_source": "target-speaker transcript-derived adjacent or one-stopword-gap issue phrases, filtered by issue anchors, allowed geopolitical pairings, and a small concept lexicon; bracketed stage cues removed",
+        "target_idea_source": "target-speaker transcript-derived compact issue phrases, filtered by issue anchors and a versioned concept lexicon; bounded non-stopword gaps are allowed only for curated phrases; bracketed stage cues removed",
         "outcome_source": "target-speaker transcript turns; headline candidate mentions require all normalized terms within an eight-token window in one turn; target phrase coverage checks the same window in one headline",
+        "phrase_extractor": {
+            "version": ISSUE_PHRASE_EXTRACTOR_VERSION,
+            "lexicon_sha256": issue_phrase_lexicon_sha256(),
+        },
         "normalization": {"stopword_filter": True, "simple_plural_normalization": True, "nationality_aliases": ALIASES, "max_span_tokens": 8},
         "ranking": "source count + publisher diversity + recency heuristic; score is not a probability",
         "context_warning": "Legacy snapshots were retrieved retrospectively; this is an exploratory lexical-coverage audit, not a prospective forecast evaluation.",

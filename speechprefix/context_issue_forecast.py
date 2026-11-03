@@ -8,7 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from .context_snapshots import validate_prospective_snapshot
-from .headline_idea_matching import extract_headline_ideas
+from .headline_idea_matching import (
+    ISSUE_PHRASE_EXTRACTOR_VERSION,
+    extract_headline_ideas,
+    issue_phrase_lexicon_sha256,
+)
 
 
 def generate_prospective_issue_forecast(
@@ -40,7 +44,7 @@ def generate_prospective_issue_forecast(
     )
     ideas = [idea for idea in ideas if idea["term_count"] >= 2]
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "forecast_type": "prospective-context-issue-phrase-candidates",
         "model_family": "source-supported lexical issue phrase ranker",
         "model_version": "compact-issue-phrase-heuristic-v1",
@@ -52,6 +56,10 @@ def generate_prospective_issue_forecast(
         "snapshot_sha256": snapshot.get("snapshot_sha256"),
         "input_sha256": hashlib.sha256(snapshot_file.read_bytes()).hexdigest(),
         "candidate_policy": "compact two-term lexical issue phrases; minimum two distinct terms; no transcript or target labels",
+        "candidate_extractor": {
+            "version": ISSUE_PHRASE_EXTRACTOR_VERSION,
+            "lexicon_sha256": issue_phrase_lexicon_sha256(),
+        },
         "score_policy": "source count, publisher diversity, and recency heuristic; not a probability or forecast confidence",
         "candidate_count": len(ideas),
         "candidates": [

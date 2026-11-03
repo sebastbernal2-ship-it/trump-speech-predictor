@@ -9,7 +9,12 @@ from typing import Any
 
 from .context_snapshots import validate_prospective_snapshot
 from .context_theme_ranker import read_jsonl
-from .headline_idea_matching import _target_turns, extract_transcript_ideas
+from .headline_idea_matching import (
+    ISSUE_PHRASE_EXTRACTOR_VERSION,
+    _target_turns,
+    extract_transcript_ideas,
+    issue_phrase_lexicon_sha256,
+)
 
 
 def _precision_recall(predicted: list[str], target: set[str], k: int) -> dict[str, float]:
@@ -156,7 +161,7 @@ def evaluate_prospective_issue_forecast(
             "speaker_history_prevalence": _precision_recall(history_ranked, target_ids, k),
         }
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "evaluation_type": "prospective-issue-forecast-after-event-lexical-overlap",
         "event_id": event_id,
         "event_date": event_date.isoformat(),
@@ -170,6 +175,11 @@ def evaluate_prospective_issue_forecast(
             "event_records": hashlib.sha256(Path(event_records_path).read_bytes()).hexdigest(),
         },
         "target_policy": "automatic compact issue phrases from target-speaker turns; not semantic gold",
+        "target_extractor": {
+            "version": ISSUE_PHRASE_EXTRACTOR_VERSION,
+            "lexicon_sha256": issue_phrase_lexicon_sha256(),
+        },
+        "forecast_candidate_extractor": forecast.get("candidate_extractor"),
         "history_policy": "distinct earlier archive events by date; same-day events excluded; archive availability timestamps are unverified",
         "config": {"top_k": list(top_k)},
         "history_event_count": len(history_event_ids),
