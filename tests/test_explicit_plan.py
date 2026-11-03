@@ -173,6 +173,10 @@ class ExplicitPlanTests(unittest.TestCase):
             self.assertEqual(plans[0]["review_status"], "draft")
             self.assertEqual(plans[0]["weak_label_config"]["idf_training_date_range"], ["2020-01-01", "2020-01-01"])
             self.assertEqual(len(plan_path_examples(events[0], plans[0], label_policy="weak-extractive")), 2)
+            assistant_draft = {**plans[0], "annotation_source": "assistant-excerpt-review-v1"}
+            self.assertEqual(len(plan_path_examples(events[0], assistant_draft, label_policy="assistant-draft")), 2)
+            with self.assertRaisesRegex(ValueError, "weak-extractive training"):
+                plan_path_examples(events[0], assistant_draft, label_policy="weak-extractive")
             with self.assertRaisesRegex(ValueError, "only reviewed"):
                 plan_path_examples(events[0], plans[0])
             output = root / "weak-plan.pt"

@@ -136,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
     weak_labels.add_argument("--top-terms", type=int, default=4)
 
     explicit_train = sub.add_parser(
-        "explicit-plan-train", help="train the theme/section/talking-point predictor on reviewed or explicit weak labels"
+        "explicit-plan-train", help="train the plan-path predictor with reviewed, weak-extractive, or assistant-draft labels"
     )
     explicit_train.add_argument("--events", default="data/rollcall-events.jsonl")
     explicit_train.add_argument("--plans", default="data/rollcall-speech-plans.jsonl")
@@ -155,7 +155,9 @@ def main(argv: list[str] | None = None) -> int:
     explicit_train.add_argument("--cpu-threads", type=int, default=0)
     explicit_train.add_argument("--device", default="auto")
     explicit_train.add_argument("--max-steps", type=int, default=0)
-    explicit_train.add_argument("--label-policy", choices=("reviewed", "weak-extractive"), default="reviewed")
+    explicit_train.add_argument(
+        "--label-policy", choices=("reviewed", "weak-extractive", "assistant-draft"), default="reviewed",
+    )
 
     explicit_predict = sub.add_parser(
         "explicit-plan-predict", help="predict a theme/section/talking-point path from an observed prefix"

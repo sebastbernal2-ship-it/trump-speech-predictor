@@ -19,7 +19,8 @@ from .hybrid_train import BOS_ID, EOS_ID, PAD_ID, UNK_ID, build_vocabulary
 from .model import tokenize
 from .model_versions import DEFAULT_REGISTRY, assert_new_model_artifact, create_model_version, register_model_version
 from .speech_plans import (
-    PLAN_MARKERS, WEAK_PLAN_ANNOTATION_SOURCE, plan_path_examples, validate_speech_plan,
+    ASSISTANT_PLAN_ANNOTATION_SOURCE, PLAN_MARKERS, WEAK_PLAN_ANNOTATION_SOURCE,
+    plan_path_examples, validate_speech_plan,
 )
 
 
@@ -204,12 +205,13 @@ def _event_records(
         event = events[event_id]
         if label_policy == "reviewed":
             validate_speech_plan(plan, event, require_reviewed=True)
-        elif label_policy == "weak-extractive":
-            if (
-                plan.get("review_status") != "draft"
-                or plan.get("annotation_source") != WEAK_PLAN_ANNOTATION_SOURCE
-            ):
-                raise ValueError("weak-extractive training requires draft labels from the extractive labeler")
+        elif label_policy in {"weak-extractive", "assistant-draft"}:
+            expected_source = (
+                WEAK_PLAN_ANNOTATION_SOURCE if label_policy == "weak-extractive"
+                else ASSISTANT_PLAN_ANNOTATION_SOURCE
+            )
+            if plan.get("review_status") != "draft" or plan.get("annotation_source") != expected_source:
+                raise ValueError(f"{label_policy} training requires draft labels from its named source")
             validate_speech_plan(plan, event, require_complete=True)
         else:
             raise ValueError(f"unknown plan label policy: {label_policy}")
@@ -331,8 +333,8 @@ def train_explicit_plan_model(
         raise ValueError("cpu_threads must be positive")
     output = Path(output_path)
     assert_new_model_artifact(output, registry_path)
-    if label_policy not in {"reviewed", "weak-extractive"}:
-        raise ValueError("label_policy must be reviewed or weak-extractive")
+    if label_policy not in {"reviewed", "weak-extractive", "assistant-draft"}:
+        raise ValueError("label_policy must be reviewed, weak-extractive, or assistant-draft")
     records = _event_records(events_path, plans_path, label_policy)
     train_records, validation_records, test_records = _chronological_split(records)
     train_examples = _flatten_examples(train_records, context_length, label_policy)

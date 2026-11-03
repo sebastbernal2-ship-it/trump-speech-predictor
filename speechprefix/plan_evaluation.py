@@ -90,7 +90,7 @@ def evaluate_explicit_plan_model(
     device_name: str = "auto",
     cpu_threads: int | None = None,
 ) -> dict:
-    """Compare held-out hierarchical predictions with weak-label and causal lexical baselines."""
+    """Compare held-out hierarchical predictions with training-prior and causal lexical baselines."""
     model, vocabulary, device, metadata = load_explicit_plan_model(checkpoint_path, device_name)
     if cpu_threads is not None:
         if cpu_threads < 1:

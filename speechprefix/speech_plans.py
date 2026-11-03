@@ -5,6 +5,7 @@ from __future__ import annotations
 
 PLAN_MARKERS = ("__plan__", "__theme__", "__section__", "__point__", "__endplan__")
 WEAK_PLAN_ANNOTATION_SOURCE = "factbase-topic-extractive-keyphrase-hierarchy-v3"
+ASSISTANT_PLAN_ANNOTATION_SOURCE = "assistant-excerpt-review-v1"
 
 
 def validate_speech_plan(
@@ -107,12 +108,13 @@ def plan_path_examples(
         raise ValueError("max_context_tokens must be positive")
     if label_policy == "reviewed":
         validate_speech_plan(plan, event, require_reviewed=True)
-    elif label_policy == "weak-extractive":
-        if (
-            plan.get("review_status") != "draft"
-            or plan.get("annotation_source") != WEAK_PLAN_ANNOTATION_SOURCE
-        ):
-            raise ValueError("weak-extractive training requires draft labels from the extractive labeler")
+    elif label_policy in {"weak-extractive", "assistant-draft"}:
+        expected_source = (
+            WEAK_PLAN_ANNOTATION_SOURCE if label_policy == "weak-extractive"
+            else ASSISTANT_PLAN_ANNOTATION_SOURCE
+        )
+        if plan.get("review_status") != "draft" or plan.get("annotation_source") != expected_source:
+            raise ValueError(f"{label_policy} training requires draft labels from its named source")
         validate_speech_plan(plan, event, require_complete=True)
     else:
         raise ValueError(f"unknown plan label policy: {label_policy}")
