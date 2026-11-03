@@ -55,9 +55,12 @@ class SpeakerIdeaForecastTests(unittest.TestCase):
             self.assertEqual(delta["events"], 3)
             self.assertEqual(delta["date_clusters"], 2)
             self.assertIn("cluster_bootstrap_95pct_ci", delta["ndcg_at_10"])
-            self.assertEqual(report["schema_version"], 3)
+            self.assertEqual(report["schema_version"], 4)
             errors = report["test_error_analysis_at_10"]
             self.assertEqual(errors["events"], 3)
+            self.assertEqual(
+                sum(errors["target_label_density"]["events_by_label_count"].values()), 3,
+            )
             self.assertEqual(
                 errors["missed_target_phrase_instances"],
                 sum(errors["missed_target_decomposition"].values()),
