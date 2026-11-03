@@ -21,6 +21,12 @@ The evaluator fits one Bernoulli naive-Bayes classifier per family on the earlie
 
 `data/rollcall-theme-family-drafts-v1.jsonl` contains assistant-authored broad-family mappings from the full-transcript theme drafts. The source theme drafts and family mappings are unreviewed. Omitted families are weak inferred negatives, not verified transcript absences. All source records, draft labels, context maps, and evaluation reports remain local and Git-ignored.
 
+## Prospective snapshot gate
+
+The v1 snapshot set is not a strict pre-event benchmark. A headline's date being earlier than the speech does not show that the headline was retrieved before the speech, and retrospective location-based search can select stories with hindsight. `speechprefix context-snapshot-audit` records these deficiencies; the current 20-snapshot audit found **0/20** eligible for prospective evaluation. All 20 were retrieved on/after their event date, lack exact event-start and cutoff timestamps, and lack per-source observation timestamps. All candidate publication dates are day-precision only; 17/20 use location hints whose pre-event availability is unverified.
+
+A prospective v2 record must include timezone-aware RFC 3339 values for event start, prediction cutoff, and snapshot freeze; event-metadata provenance independently verified as available before the cutoff; exact retrieval/observation timestamps for queries and candidate sources; and publication timestamps strictly before cutoff. Location may be included only with independent evidence it was known before cutoff. `speechprefix context-snapshot-validate --input <snapshot.json>` checks this recorded contract. Validation cannot independently prove the truth of timestamps or attestations, so the source documents and capture procedure still need review. Never relabel a retrospective v1 snapshot as prospective.
+
 ## Confidence policy
 
 The Bernoulli naive-Bayes posterior is emitted as an **uncalibrated ranking score**. It must not be presented as a reliable probability or confidence estimate until calibration and reliability are demonstrated on a substantially larger, independent chronological holdout. A saturated score is not evidence of certainty by itself; judge it by accuracy and calibration on future held-out cases.

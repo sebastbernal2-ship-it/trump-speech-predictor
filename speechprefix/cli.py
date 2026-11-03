@@ -120,6 +120,17 @@ def main(argv: list[str] | None = None) -> int:
     context_candidate_eval.add_argument("--labels", default="data/rollcall-theme-family-drafts-v1.jsonl")
     context_candidate_eval.add_argument("--output", default="data/rollcall-context-candidate-evaluation-v1.json")
 
+    context_snapshot_audit = sub.add_parser(
+        "context-snapshot-audit", help="audit exploratory context records for prospective-freeze eligibility"
+    )
+    context_snapshot_audit.add_argument("--snapshots", default="data/rollcall-context-snapshots-v1.jsonl")
+    context_snapshot_audit.add_argument("--output", default="data/rollcall-context-snapshot-audit-v1.json")
+
+    context_snapshot_validate = sub.add_parser(
+        "context-snapshot-validate", help="validate a timestamped prospective context snapshot"
+    )
+    context_snapshot_validate.add_argument("--input", required=True, help="prospective snapshot JSON")
+
     llm = sub.add_parser("llm", help="run a Hugging Face causal-LM continuation baseline")
     llm.add_argument("--model", default="openai-community/gpt2")
     llm.add_argument("--revision", help="Hugging Face model commit; the default GPT-2 revision is pinned")
@@ -379,6 +390,27 @@ def main(argv: list[str] | None = None) -> int:
                 "test_predictions": result["test_predictions"],
                 "limitations": result["limitations"],
             }, ensure_ascii=False, indent=2))
+        elif args.command == "context-snapshot-audit":
+            import json
+            from .context_snapshots import audit_legacy_snapshots
+
+            result = audit_legacy_snapshots(args.snapshots, output_path=args.output)
+            print(json.dumps({
+                "output": args.output,
+                "snapshot_count": result["snapshot_count"],
+                "strict_prospective_eligible_count": result["strict_prospective_eligible_count"],
+                "issue_event_counts": result["issue_event_counts"],
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "context-snapshot-validate":
+            import json
+            from pathlib import Path
+            from .context_snapshots import validate_prospective_snapshot
+
+            try:
+                snapshot = json.loads(Path(args.input).read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"invalid snapshot JSON: {exc}") from None
+            print(json.dumps(validate_prospective_snapshot(snapshot), ensure_ascii=False, indent=2))
         elif args.command == "llm":
             from .hybrid import combine_candidate_mass
             from .llm import CausalLM
