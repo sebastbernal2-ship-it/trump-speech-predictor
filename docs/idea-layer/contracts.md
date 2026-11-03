@@ -13,13 +13,14 @@ Required fields:
 - `source_url`, `publisher`, `content`, `content_sha256`, `reuse_terms`
 - `published_at`, `observed_at`: timezone-aware timestamps; observed cannot precede published
 - `availability_status`: `verified_before_cutoff`, `not_verified`, or `unknown`
+- Verified items must also include nonempty `availability_evidence` and `timestamp_basis` fields.
 - For `trump_post`, also keep `account` and platform `post_id`
 
-The content hash must match the stored content. `verified_before_cutoff` is an explicit provenance assertion—not proof that the publisher’s timestamp is true. Only source items with verified status and both timestamps strictly before the forecast cutoff can be used.
+The content hash must match the stored content. `verified_before_cutoff` is an explicit provenance assertion—not proof that the publisher’s timestamp is true. The evidence and timestamp-basis fields make the assertion auditable. Only source items with verified status and both timestamps strictly before the forecast cutoff can be used.
 
 ## 2. Event manifest
 
-Use `schema_version: 1`, `record_type: "idea-layer-event"`, a stable `event_id`, timezone-aware `event_start_at` and `prediction_cutoff_at`, and `event_metadata_source_ids`. The cutoff must strictly precede the scheduled start. `known_context` is a list of `{fact_id, fact, source_ids}`; every fact cites its source records. Do not put transcripts, post-event descriptions, or target labels in the manifest.
+Use `schema_version: 1`, `record_type: "idea-layer-event"`, a stable `event_id`, timezone-aware `event_start_at` and `prediction_cutoff_at`, and `event_metadata_source_ids`. The cutoff must strictly precede the scheduled start. Each `event_metadata_source_id` must point to a `source_type: "event_metadata"` record. `known_context` is a list of `{fact_id, fact, source_ids}`; every fact cites its source records. Do not put transcripts, post-event descriptions, or target labels in the manifest.
 
 ## 3. Frozen input snapshot
 

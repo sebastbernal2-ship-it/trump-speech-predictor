@@ -21,6 +21,8 @@ class IdeaLayerLedgerTests(unittest.TestCase):
             "published_at": published,
             "observed_at": observed,
             "availability_status": status,
+            "availability_evidence": "fixture evidence sha256:" + "0" * 64 if status == "verified_before_cutoff" else "",
+            "timestamp_basis": "fixture publisher timestamp field" if status == "verified_before_cutoff" else "",
             "content": content,
             "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
             "reuse_terms": "Local research; retain source attribution.",

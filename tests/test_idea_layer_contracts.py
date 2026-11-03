@@ -22,6 +22,8 @@ class IdeaLayerContractsTests(unittest.TestCase):
             "published_at": published,
             "observed_at": observed,
             "availability_status": "verified_before_cutoff",
+            "availability_evidence": "fixture evidence sha256:" + "0" * 64,
+            "timestamp_basis": "fixture publisher timestamp field",
             "content": content,
             "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
             "reuse_terms": "Local research use; retain source attribution.",
@@ -82,6 +84,14 @@ class IdeaLayerContractsTests(unittest.TestCase):
             }],
         }
 
+    def test_verified_source_requires_explicit_timestamp_and_availability_evidence(self):
+        source = self._sources()[1]
+        source.pop("availability_evidence")
+        with self.assertRaisesRegex(ValueError, "availability_evidence"):
+            validate_source_evidence(source)
+        source["availability_status"] = "unknown"
+        self.assertEqual(validate_source_evidence(source)["source_id"], "news-oil")
+
     def test_source_fingerprint_and_as_of_availability(self):
         source = self._sources()[1]
         validate_source_evidence(source)
@@ -111,6 +121,12 @@ class IdeaLayerContractsTests(unittest.TestCase):
         forecast["input_source_ids"].append("late")
         with self.assertRaisesRegex(ValueError, "unavailable or unverified"):
             validate_pre_speech_forecast(forecast, manifest, self._sources() + [late_source])
+
+    def test_event_metadata_citations_must_point_to_event_metadata_records(self):
+        manifest = self._manifest()
+        manifest["event_metadata_source_ids"] = ["news-oil"]
+        with self.assertRaisesRegex(ValueError, "must reference event_metadata"):
+            validate_pre_speech_forecast(self._forecast(), manifest, self._sources())
 
     def test_manifest_and_forecast_reject_bad_cutoffs_and_target_leakage(self):
         manifest = self._manifest()
