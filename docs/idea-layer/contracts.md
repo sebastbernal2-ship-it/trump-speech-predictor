@@ -7,7 +7,8 @@ The Python validators live in `speechprefix/idea_layer/contracts.py`; tests in `
 Required fields:
 
 - `schema_version: 1`, `record_type: "idea-layer-source"`
-- `source_id`: stable local ID; never recycle it
+- `source_id`: unique immutable observation-record ID; never recycle it
+- Optional `canonical_source_id`: stable content identity used to avoid counting repeated captures of one article/post as separate evidence
 - `source_type`: `news`, `trump_post`, `event_metadata`, or `other_primary_source`
 - `source_url`, `publisher`, `content`, `content_sha256`, `reuse_terms`
 - `published_at`, `observed_at`: timezone-aware timestamps; observed cannot precede published
@@ -22,8 +23,13 @@ Use `schema_version: 1`, `record_type: "idea-layer-event"`, a stable `event_id`,
 
 ## 3. Frozen input snapshot
 
-`idea-source-import` appends validated source records to `data/idea-layer/source-ledger.jsonl`; identical IDs are idempotent, conflicting IDs fail. `idea-snapshot-freeze` selects verified event metadata and eligible evidence from the requested pre-cutoff lookback, embeds the selected source records, stores the manifest hash, and adds a content hash. Use `schema_version: 1`, `record_type: "idea-layer-input-snapshot"`, `event_id`, the exact cutoff, `snapshot_created_at`, the event manifest, unique `input_source_ids`, `sources`, and `snapshot_sha256`. A snapshot cannot be rewritten; make a new artifact for a new cutoff.
+`idea-source-import` appends validated source records to `data/idea-layer/source-ledger.jsonl`; identical IDs are idempotent, conflicting IDs fail. `idea-news-collect` captures headline-only Google News RSS results for explicit queries and records query-response hashes, exact response bytes (base64, in the ignored local run report), and observation times. Its `pubDate` and item links are feed-reported, not publisher-verified. `idea-post-import` accepts only normalized JSONL post archives with platform/account, post ID/permalink, platform publication time, actual observation time, timestamp/availability evidence, and reuse terms; it stores the exact archive-file hash with each normalized record and does not fetch or scrape social platforms. `idea-snapshot-freeze` selects verified event metadata and eligible evidence from the requested pre-cutoff lookback, deduplicates repeated captures by `canonical_source_id`, embeds the selected source records, stores the manifest hash, and adds a content hash. Use `schema_version: 1`, `record_type: "idea-layer-input-snapshot"`, `event_id`, the exact cutoff, `snapshot_created_at`, the event manifest, unique `input_source_ids`, `sources`, and `snapshot_sha256`. A snapshot cannot be rewritten; make a new artifact for a new cutoff.
 
+A post-export line has this shape (replace placeholders with verified values; do not mark availability verified without evidence):
+
+```json
+{"schema_version":1,"record_type":"idea-layer-trump-post-export","platform":"truth_social","account":"realDonaldTrump","post_id":"<platform-id>","permalink":"https://<platform-post-url>","text":"<exact post text>","published_at":"2030-01-20T12:30:00Z","observed_at":"2030-01-20T12:35:00Z","availability_status":"verified_before_cutoff","availability_evidence":"<archive capture or timestamp evidence>","timestamp_basis":"<platform timestamp field or archived timestamp basis>","reuse_terms":"<applicable terms or unresolved status>"}
+```
 ## 4. Frozen pre-speech forecast
 
 Use `schema_version: 1`, `record_type: "idea-layer-forecast"`, a unique `forecast_id`, `input_snapshot_sha256`, `event_id`, the manifest’s exact `prediction_cutoff_at`, `generated_at` (strictly before cutoff), `model_version`, `input_source_ids`, and ordered `candidates`.

@@ -2,7 +2,7 @@
 
 ## Primary direction: standalone event-specific idea layer
 
-The first product boundary is `speechprefix/idea_layer/`: a pre-speech idea ranker grounded in time-verified current news, Trump’s attributable public posts, and known event details, with append-only updates from already-observed speech turns. It must work without word-generation or speech-plan models. Its `contracts.py` validates evidence provenance, strict cutoffs, candidate citations, and turn visibility; `ledger.py` appends source records and freezes immutable pre-cutoff inputs. Automated news/post retrieval, ranking, and update algorithms remain unimplemented. The canonical scope and evaluation plan are in `docs/idea-layer/README.md`.
+The first product boundary is `speechprefix/idea_layer/`: a pre-speech idea ranker grounded in time-verified current news, Trump’s attributable public posts, and known event details, with append-only updates from already-observed speech turns. It must work without word-generation or speech-plan models. Its `contracts.py` validates provenance, cutoffs, candidate citations, and turn visibility; `ledger.py` appends evidence and freezes immutable inputs; `news.py` captures Google News RSS headlines; and `posts.py` normalizes a permitted local post archive. No post archive, ranking model, or live-update algorithm is connected yet. The canonical scope and evaluation plan are in `docs/idea-layer/README.md`.
 
 Existing components below are separate research prototypes and baselines. They are not automatically on the critical path for the idea layer.
 

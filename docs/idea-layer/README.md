@@ -10,16 +10,24 @@ As the speech unfolds, the same layer may update the idea ranking using only tra
 
 This package is intentionally separate from word continuation, generic speech generation, hierarchical speech plans, and question-answer response prediction. Those remain independent prototypes. Nothing in the idea layer should import their model weights or training data.
 
-The standalone Python boundary is `speechprefix/idea_layer/`. It now has provenance/leakage validation plus an append-only source ledger and immutable input-snapshot freezer. It contains no news/social collector or ranking model yet. Record formats are specified in [`contracts.md`](contracts.md). Legacy `context-news-*` and `context-issue-*` commands remain exploratory and are not the new system.
+The standalone Python boundary is `speechprefix/idea_layer/`. It now has provenance/leakage validation, an append-only source ledger, immutable input snapshots, and a prospective Google News RSS headline adapter. It has no Trump-post archive/collector or idea ranking model yet. Record formats are specified in [`contracts.md`](contracts.md). Legacy `context-news-*` and `context-issue-*` commands remain exploratory and are not the new system.
 
 ## Forecast lifecycle
 
 1. **Register the event.** Record the scheduled start and a prediction cutoff. Store only event facts known before that cutoff, each linked to its source.
-2. **Capture evidence.** Keep breaking-news items, Trump posts, and event metadata in an append-only, source-attributed ledger. For each item, keep publication time, first-observed time, original URL/account/post ID, exact content fingerprint, and reuse terms. `idea-source-import` validates and appends local JSONL records idempotently; it is not an automated scraper.
-3. **Freeze the inputs.** `idea-snapshot-freeze` rejects items published or first observed at/after cutoff, or whose pre-cutoff availability is unverified. It saves an immutable source bundle and hash before any forecast. The default local ledger is `data/idea-layer/source-ledger.jsonl` (Git-ignored).
+2. **Capture evidence.** Keep breaking-news items, Trump posts, and event metadata in an append-only, source-attributed ledger. `idea-news-collect` captures headline-only Google News RSS results for explicit topic queries; the feed's publication times and links are not independently verified. `idea-post-import` normalizes a permitted, timestamped post archive; no social platform scraper is provided. `idea-source-import` accepts already-normalized local JSONL source rows. For each item, retain publication/observation times, URL/account/post ID, exact content fingerprint, and reuse terms.
+3. **Freeze the inputs.** `idea-snapshot-freeze` rejects items published or first observed at/after cutoff, or whose pre-cutoff availability is unverified; repeated captures with a shared `canonical_source_id` count once. It saves an immutable source bundle and hash before any forecast. The default local ledger is `data/idea-layer/source-ledger.jsonl` (Git-ignored).
 4. **Rank ideas.** Produce open-vocabulary human-readable ideas—not just phrases copied from headlines. Every forecast idea cites the evidence that supports it. Keep a ranking score distinct from a calibrated probability.
 5. **Update during the speech.** Append new forecast snapshots as turns become observable. A change must cite already-visible turn IDs; never rewrite the initial pre-speech forecast.
 6. **Score afterward.** Only the evaluator reads the completed transcript. Compare forecasts to transcript-grounded idea labels and report both hits and misses.
+
+Example capture flow (the event manifest and source records must already exist; use a new path for each immutable report/snapshot):
+
+```sh
+.venv/bin/python -m speechprefix idea-news-collect --manifest data/idea-layer/event.json --query "oil OR Gaza OR Pakistan" --report data/idea-layer/news-run-001.json
+.venv/bin/python -m speechprefix idea-post-import --input data/idea-layer/permitted-post-export.jsonl
+.venv/bin/python -m speechprefix idea-snapshot-freeze --manifest data/idea-layer/event.json --output data/idea-layer/event-snapshot-001.json
+```
 
 The contracts enforce these boundaries but cannot prove a source archive’s timestamps are truthful. Source capture procedure and evidence must be audited too.
 
@@ -50,14 +58,15 @@ Live-update evaluation is a separate replay: freeze the pre-speech snapshot, rev
 ## Current state and next work
 
 - Existing Google News searches are retrospective, and no prospectively frozen sample exists.
-- No automated news collector or Trump-post archive is connected. Choose permitted, attributable sources and verify timestamps/reuse terms before implementation.
+- Google News RSS headline capture is implemented, but no truly prospective event has been frozen yet. The RSS publication time and link are feed-reported, not independently verified against the publisher.
+- The local Trump-post archive normalizer is implemented, but no permitted archive has been supplied or connected. Do not scrape a platform without checking its terms; verify account, post IDs, timestamps, and reuse terms for any export.
 - The old context ranker found source-supported phrases but did not show that Trump would discuss them; the speaker-history ranker predicts recurring labels and does not serve the current-events goal.
-- Next: implement source adapters for a predeclared news feed and a permitted Trump-post export. Then freeze one truly future event snapshot. Do not train a complex ranker until input provenance and an evaluation target are working.
+- Next: identify and verify a permitted, attributable Trump-post archive; test the Google RSS capture on an actual future event with predeclared queries; then freeze one truly prospective snapshot. Do not train a complex ranker until input provenance and an evaluation target are working.
 
 ## Repository map
 
-- `speechprefix/idea_layer/`: isolated contracts and source ledger/snapshot freezer; source adapters, ranking, and incremental updates remain future work.
-- `tests/test_idea_layer_contracts.py`: leakage, timestamps, evidence, and update-citation checks.
+- `speechprefix/idea_layer/`: isolated contracts, append-only ledger, Google RSS headline capture, permitted post-archive normalizer, and snapshot freezer; connecting an actual post archive, idea ranking, and incremental updates remain future work.
+- `tests/test_idea_layer_contracts.py`, `tests/test_idea_layer_ledger.py`, `tests/test_idea_layer_news.py`, `tests/test_idea_layer_posts.py`: cutoff, provenance, append-only, retrieval/import, and update-citation checks.
 - `docs/idea-layer/README.md`: canonical scope and evaluation contract.
 - `docs/context-theme-forecast.md`: historical experiments only.
 - `speechprefix/` modules outside `idea_layer/`: existing research prototypes and baselines, not dependencies of this layer.
