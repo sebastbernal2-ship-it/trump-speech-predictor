@@ -50,6 +50,7 @@ For a real-transcript weak-label experiment, create the keyword plans and train 
 .venv/bin/python -m speechprefix weak-plan-labels
 .venv/bin/python -m speechprefix explicit-plan-train --events data/rollcall-events.jsonl --plans data/rollcall-weak-speech-plans.jsonl --label-policy weak-extractive --output checkpoints/explicit-plan-weak-run-001.pt
 .venv/bin/python -m speechprefix explicit-plan-predict --model checkpoints/explicit-plan-weak-run-001.pt --prefix "Observed speech prefix"
+.venv/bin/python -m speechprefix explicit-plan-evaluate --model checkpoints/explicit-plan-weak-run-001.pt --plans data/rollcall-weak-speech-plans.jsonl --device cpu --cpu-threads 4
 ```
 
 For human-reviewed semantic plans, pass `--plans data/rollcall-speech-plans.jsonl` and keep the default `--label-policy reviewed`. The older `pretrained-hybrid` command is only a candidate-fusion comparison baseline; it may use external checkpoints. All trained-model commands append immutable run metadata and artifact hashes to `models/registry.jsonl` and refuse to overwrite an existing artifact. SpeechPlan-H's architecture and known limits are described in `docs/speechplan-hybrid.md`.
@@ -60,7 +61,7 @@ For human-reviewed semantic plans, pass `--plans data/rollcall-speech-plans.json
 
 - **Pre-speech forecast:** Given only historical speeches, rank recurring phrases likely to appear in the next speech. The initial baseline uses dated JSONL metadata and walk-forward evaluation. It is a phrase-recurrence baseline, not a semantic topic model.
 - **Continuation:** Given an observed transcript prefix, predict its next word(s). Replay held-out speeches sequentially and score each prediction before revealing the next word.
-- **In-speech plan path:** Given the same kind of observed prefix, predict one theme → section → talking-point path. Score it against reviewed plan text, separately from next-word continuation; the current plan model is untrained on real reviewed plans.
+- **In-speech plan path:** Given the same kind of observed prefix, predict one theme → section → talking-point path. Keep weak pseudo-label diagnostics separate from semantic idea metrics; human-reviewed plans are required for semantic accuracy.
 - **Question-anchored response:** Given the observed turns and a reviewer-selected question/prompt trigger in a time-coded event, predict the target speaker's likely ideas and exact words. Triggers can include follow-ups and the target speaker's own clarifying questions. Score ideas separately from wording and track whether another speaker responds or the target does not.
 
 Never mix these scores. A continuation model sees the target transcript prefix; a pre-speech model must not. Question-response evaluation must reveal only turns observable by its prediction time.

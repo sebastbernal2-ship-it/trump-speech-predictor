@@ -16,6 +16,7 @@ SpeechPlan-H continuation metrics use teacher-forced target windows and do not e
 - For each talking point, predict its theme/section/point path from only turns that ended before the first supporting target turn begins.
 - Report plan-token loss, teacher-forced token accuracy, and greedy exact-path match; record the number of test examples included in greedy generation.
 - For `weak-extractive` runs, report these strictly as reproduction of transcript-keyword pseudo-labels, not semantic quality or wording quality. Keep them separate from reviewed-label runs, continuation, and question-anchored response metrics.
+- Use `explicit-plan-evaluate` to report per-level exact/keyword overlap, valid-path rate, output diversity, latency, event-progress slices, and majority/recent-prefix baselines.
 - Report semantic idea metrics only after the labels and output mapping are human-reviewed.
 
 Synthetic fixture scores are plumbing checks only. Real-transcript weak-label scores are still heuristic metrics; they do not establish idea-prediction accuracy. See `docs/hierarchical-speech-planner.md` for the model and plan schema.

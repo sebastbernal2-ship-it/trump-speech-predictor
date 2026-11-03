@@ -142,6 +142,13 @@ class ExplicitPlanTests(unittest.TestCase):
 
             prediction = predict_plan_path(output, "Observed speech prefix", device_name="cpu")
             self.assertEqual(set(prediction), {"model_version", "theme", "section", "point"})
+            from speechprefix.plan_evaluation import evaluate_explicit_plan_model
+
+            report = evaluate_explicit_plan_model(output, events_path, plans_path, device_name="cpu")
+            self.assertEqual(report["split"]["test_examples"], 2)
+            self.assertEqual(report["overall"]["valid_path_rate"], 1.0)
+            self.assertIn("recent_prefix_keywords", report["baselines"])
+            self.assertTrue(report["overall"]["p95_generation_latency_ms"] >= 0)
             with self.assertRaisesRegex(FileExistsError, "versioned path"):
                 train_explicit_plan_model(events_path, plans_path, output, registry_path=registry)
 

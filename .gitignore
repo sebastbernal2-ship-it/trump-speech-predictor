@@ -19,6 +19,7 @@ data/rollcall-speech-plans.jsonl
 data/rollcall-weak-speech-plans.jsonl
 data/rollcall-weak-speech-plans-v1.jsonl
 data/rollcall-weak-speech-plans-v2.jsonl
+data/rollcall-plan-path-v2-evaluation.json
 data/rollcall-plan-review-pilot.jsonl
 checkpoints/
 .DS_Store

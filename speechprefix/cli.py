@@ -165,6 +165,15 @@ def main(argv: list[str] | None = None) -> int:
     explicit_predict.add_argument("--tokens", type=int, default=96)
     explicit_predict.add_argument("--device", default="auto")
 
+    explicit_evaluate = sub.add_parser(
+        "explicit-plan-evaluate", help="evaluate a plan-path model against chronological held-out examples and baselines"
+    )
+    explicit_evaluate.add_argument("--model", required=True)
+    explicit_evaluate.add_argument("--events", default="data/rollcall-events.jsonl")
+    explicit_evaluate.add_argument("--plans", required=True)
+    explicit_evaluate.add_argument("--device", default="auto")
+    explicit_evaluate.add_argument("--cpu-threads", type=int, default=0)
+
     hybrid = sub.add_parser("hybrid", help="generate with a trained from-scratch SpeechPlan-H checkpoint")
     hybrid.add_argument("--model", required=True)
     hybrid.add_argument("--prefix", required=True)
@@ -387,6 +396,14 @@ def main(argv: list[str] | None = None) -> int:
                 args.model, args.prefix, device_name=args.device,
                 max_new_tokens=args.tokens,
             ), ensure_ascii=False))
+        elif args.command == "explicit-plan-evaluate":
+            import json
+            from .plan_evaluation import evaluate_explicit_plan_model
+
+            print(json.dumps(evaluate_explicit_plan_model(
+                args.model, args.events, args.plans, device_name=args.device,
+                cpu_threads=args.cpu_threads or None,
+            ), ensure_ascii=False, indent=2))
         elif args.command == "hybrid":
             from .hybrid_train import generate_hybrid
 
