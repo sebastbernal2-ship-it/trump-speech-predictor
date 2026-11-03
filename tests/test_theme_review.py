@@ -33,6 +33,7 @@ class ThemeReviewTests(unittest.TestCase):
             result = generate_theme_review_packets(
                 snapshots, events, labels,
                 annotator_a_path=paths[0], annotator_b_path=paths[1], key_path=paths[2], seed=7,
+                selection_description="two synthetic events for a unit test",
             )
             self.assertEqual(result["item_count"], 2)
             a_rows = [json.loads(line) for line in paths[0].read_text(encoding="utf-8").splitlines()]
@@ -42,8 +43,15 @@ class ThemeReviewTests(unittest.TestCase):
             self.assertNotIn("secret title", json.dumps(a_rows))
             self.assertNotIn("positive_families", json.dumps(a_rows))
             self.assertEqual(a_rows[0]["taxonomy"][0]["label"], None)
+            self.assertIn("First, without consulting the taxonomy", a_rows[0]["instructions"])
+            self.assertLess(list(a_rows[0]).index("event_specific_ideas"), list(a_rows[0]).index("taxonomy"))
             self.assertEqual(len(a_rows[0]["target_speaker_turns"]), 1)
-            self.assertEqual(len(json.loads(paths[2].read_text(encoding="utf-8"))["items"]), 2)
+            key = json.loads(paths[2].read_text(encoding="utf-8"))
+            self.assertEqual(key["schema_version"], 2)
+            self.assertEqual(len(key["items"]), 2)
+            self.assertEqual(key["selection_description"], "two synthetic events for a unit test")
+            self.assertEqual(len(key["selection_manifest_sha256"]), 64)
+            self.assertEqual(key["issue_phrase_extractor"]["version"], "compact-issue-phrases-v2")
             with self.assertRaises(FileExistsError):
                 generate_theme_review_packets(
                     snapshots, events, labels,
