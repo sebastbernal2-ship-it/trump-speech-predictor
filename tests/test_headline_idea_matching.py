@@ -12,6 +12,20 @@ from speechprefix.headline_idea_matching import (
 
 
 class HeadlineIdeaMatchingTests(unittest.TestCase):
+    def test_headline_candidates_use_exact_timestamp_cutoff_when_supplied(self):
+        sources = [{
+            "title": "Ukraine war intensifies",
+            "publisher": "Example News",
+            "published_at": "2025-05-14T15:59:00Z",
+            "source_url": "https://example.test/ukraine",
+        }]
+        ideas = extract_headline_ideas(sources, "2025-05-14T16:00:00Z")
+        war_idea = next(item for item in ideas if item["idea_id"] == "ukraine war")
+        self.assertEqual(war_idea["supporting_sources"][0]["published_at"], "2025-05-14T15:59:00Z")
+        sources[0]["published_at"] = "2025-05-14T16:00:00Z"
+        with self.assertRaisesRegex(ValueError, "at or after the prediction cutoff"):
+            extract_headline_ideas(sources, "2025-05-14T16:00:00Z")
+
     def test_extracts_open_vocabulary_ukraine_war_idea_and_matches_paraphrased_order(self):
         ideas = extract_headline_ideas([{
             "title": "Ukrainian war escalates before peace summit",

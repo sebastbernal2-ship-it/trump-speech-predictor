@@ -135,6 +135,12 @@ def main(argv: list[str] | None = None) -> int:
     transcript_idea_audit.add_argument("--events", default="data/rollcall-by-type/trump-speech-candidates.jsonl")
     transcript_idea_audit.add_argument("--output", default="data/rollcall-transcript-idea-audit-v1.json")
 
+    context_issue_forecast = sub.add_parser(
+        "context-issue-forecast", help="write source-cited issue candidates before a sealed event cutoff"
+    )
+    context_issue_forecast.add_argument("--snapshot", required=True, help="sealed prospective context snapshot JSON")
+    context_issue_forecast.add_argument("--output", required=True, help="new immutable local forecast JSON")
+
     context_candidates = sub.add_parser(
         "context-candidates", help="extract source-grounded issue candidates from pre-event headlines"
     )
@@ -505,6 +511,23 @@ def main(argv: list[str] | None = None) -> int:
                 "output": args.output,
                 "summary_by_top_k": result["summary_by_top_k"],
                 "events": event_ideas,
+                "limitations": result["limitations"],
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "context-issue-forecast":
+            import json
+            from .context_issue_forecast import generate_prospective_issue_forecast
+
+            result = generate_prospective_issue_forecast(args.snapshot, args.output)
+            print(json.dumps({
+                "output": args.output,
+                "event_id": result["event_id"],
+                "prediction_cutoff_at": result["prediction_cutoff_at"],
+                "candidate_count": result["candidate_count"],
+                "candidates": [
+                    {"rank": item["rank"], "idea": item["idea"],
+                     "source_count": item["source_count"], "supporting_sources": item["supporting_sources"][:3]}
+                    for item in result["candidates"][:10]
+                ],
                 "limitations": result["limitations"],
             }, ensure_ascii=False, indent=2))
         elif args.command == "context-candidates":

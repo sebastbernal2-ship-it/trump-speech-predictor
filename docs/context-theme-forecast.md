@@ -44,6 +44,8 @@ A prospective v2 record must include timezone-aware RFC 3339 values for event st
 
 It refuses to start after cutoff, excludes articles published after observation or at/after the exact cutoff, records query/source observation times and response hashes, and fails if retrieval finishes too late. The fixed query profile does not use event titles, transcripts, or target ideas. Google RSS timestamps remain feed-reported timestamps, not independently verified publisher times. The seal is local and append-only but cannot independently prove that source timestamps or availability attestations are truthful; retain and review the source documents and capture procedure. It also rejects transcript/target-label fields. Never relabel a retrospective v1 snapshot as prospective.
 
+Before the cutoff, `speechprefix context-issue-forecast --snapshot <sealed.json> --output data/rollcall-context-issue-forecast-<event-id>.json` writes a hashed, immutable list of compact issue phrases with source citations. It validates the sealed snapshot and refuses to run at or after cutoff. These are context-supported candidates, not probabilities or claims about what Trump will say; the retrospective chronological test found this context-only ranking worse than the speaker-history baseline.
+
 ## Confidence policy
 
 The Bernoulli naive-Bayes posterior is emitted as an **uncalibrated ranking score**. It must not be presented as a reliable probability or confidence estimate until calibration and reliability are demonstrated on a substantially larger, independent chronological holdout. A saturated score is not evidence of certainty by itself; judge it by accuracy and calibration on future held-out cases.
