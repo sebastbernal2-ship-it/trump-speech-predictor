@@ -129,6 +129,26 @@ def main(argv: list[str] | None = None) -> int:
     speaker_idea_eval.add_argument("--train-fraction", type=float, default=0.8)
     speaker_idea_eval.add_argument("--validation-fraction", type=float, default=0.1)
 
+    selective_eval = sub.add_parser(
+        "speaker-idea-selective-evaluate",
+        help="select an abstaining high-precision idea forecaster on training dates and score validation only",
+    )
+    selective_eval.add_argument("--input", default="data/rollcall-by-type/trump-speech-candidates.jsonl")
+    selective_eval.add_argument("--output", default="data/rollcall-speaker-idea-selective-evaluation-v5.json")
+    selective_eval.add_argument("--target-precision", type=float, default=0.8)
+    selective_eval.add_argument("--minimum-inner-predictions", type=int, default=50)
+
+    selective_forecast = sub.add_parser(
+        "speaker-idea-forecast",
+        help="forecast only recurrent issue phrases with a strict pre-date history and abstention",
+    )
+    selective_forecast.add_argument("--input", default="data/rollcall-by-type/trump-speech-candidates.jsonl")
+    selective_forecast.add_argument("--as-of", required=True, help="exclusive ISO date cutoff for the forecast")
+    selective_forecast.add_argument("--output", required=True, help="new immutable forecast JSON")
+    selective_forecast.add_argument("--window-days", type=int, default=90)
+    selective_forecast.add_argument("--min-history-events", type=int, default=50)
+    selective_forecast.add_argument("--max-predictions", type=int, default=1)
+
     context_theme_eval = sub.add_parser(
         "context-theme-evaluate", help="evaluate a weak, chronological context-to-theme ranking baseline"
     )
@@ -507,6 +527,54 @@ def main(argv: list[str] | None = None) -> int:
                 "test_error_analysis_at_10": result["test_error_analysis_at_10"],
                 "test_probability_diagnostic": result["test_probability_diagnostic"],
                 "limitations": result["limitations"],
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "speaker-idea-selective-evaluate":
+            import json
+            from .selective_speaker_idea_forecast import evaluate_selective_speaker_idea_forecast
+
+            result = evaluate_selective_speaker_idea_forecast(
+                args.input, output_path=args.output, target_precision=args.target_precision,
+                minimum_inner_predictions=args.minimum_inner_predictions,
+            )
+            config_selection = dict(result["config_selection"])
+            config_selection["inner_metrics"] = {
+                key: value for key, value in config_selection["inner_metrics"].items()
+                if key != "per_date_counts"
+            }
+            validation_metrics = {
+                key: value for key, value in result["validation_metrics"].items()
+                if key != "per_date_counts"
+            }
+            baseline_metrics = {
+                key: value for key, value in result["validation_reference_top1_30day"].items()
+                if key != "per_date_counts"
+            }
+            print(json.dumps({
+                "output": args.output,
+                "model_version": result["model_version"],
+                "config_selection": config_selection,
+                "split": result["split"],
+                "validation_metrics": validation_metrics,
+                "validation_pooled_precision_date_cluster_bootstrap": result["validation_pooled_precision_date_cluster_bootstrap"],
+                "validation_reference_top1_30day": baseline_metrics,
+                "limitations": result["limitations"],
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "speaker-idea-forecast":
+            import json
+            from .selective_speaker_idea_forecast import forecast_selective_speaker_ideas
+
+            result = forecast_selective_speaker_ideas(
+                args.input, args.as_of, output_path=args.output, window_days=args.window_days,
+                min_history_events=args.min_history_events, max_predictions=args.max_predictions,
+            )
+            print(json.dumps({
+                "output": args.output,
+                "model_version": result["model_version"],
+                "as_of_date": result["as_of_date"],
+                "config": result["config"],
+                "history_event_count": result["history_event_count"],
+                "predictions": result["predictions"],
+                "abstained": result["abstained"],
             }, ensure_ascii=False, indent=2))
         elif args.command == "context-theme-evaluate":
             import json
