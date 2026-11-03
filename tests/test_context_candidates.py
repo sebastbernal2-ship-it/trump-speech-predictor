@@ -1,6 +1,9 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
-from speechprefix.context_candidates import extract_context_candidates
+from speechprefix.context_candidates import extract_context_candidates, load_context_record
 
 
 class ContextCandidateTests(unittest.TestCase):
@@ -33,6 +36,32 @@ class ContextCandidateTests(unittest.TestCase):
         self.assertTrue({
             "gulf_partnership_diplomacy", "gaza_hostages_ceasefire", "foreign_security", "business_investment",
         }.issubset({candidate["candidate_id"] for candidate in candidates}))
+
+    def test_loads_json_context_map_and_selects_jsonl_event(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sources = [{"title": "Election turnout", "published_at": "2024-10-30", "url": "url"}]
+            map_path = root / "map.json"
+            map_path.write_text(json.dumps({"event": {"event_id": "event-a", "event_date": "2024-10-31"}, "pre_speech_context_sources": sources}), encoding="utf-8")
+            loaded_map = load_context_record(map_path)
+            self.assertEqual(loaded_map["event_id"], "event-a")
+            self.assertEqual(loaded_map["sources"], sources)
+
+            jsonl_path = root / "snapshots.jsonl"
+            rows = [
+                {"event_id": "event-a", "event_date": "2024-10-31", "candidate_sources": sources},
+                {"event_id": "event-b", "event_date": "2024-11-01", "candidate_sources": sources},
+            ]
+            jsonl_path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+            loaded_row = load_context_record(jsonl_path, "event-b")
+            self.assertEqual(loaded_row["event_date"], "2024-11-01")
+
+    def test_multi_event_jsonl_requires_explicit_event_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "snapshots.jsonl"
+            path.write_text("\n".join(json.dumps({"event_id": str(i)}) for i in range(2)), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "--event-id is required"):
+                load_context_record(path)
 
     def test_same_day_and_later_sources_are_rejected(self):
         for published in ("2024-10-31", "2024-11-01"):

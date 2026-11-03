@@ -107,6 +107,12 @@ def main(argv: list[str] | None = None) -> int:
     context_theme_eval.add_argument("--labels", default="data/rollcall-theme-family-drafts-v1.jsonl")
     context_theme_eval.add_argument("--output", default="data/rollcall-context-theme-evaluation-v1.json")
 
+    context_candidates = sub.add_parser(
+        "context-candidates", help="extract source-grounded issue candidates from pre-event headlines"
+    )
+    context_candidates.add_argument("--input", required=True, help="JSON context map or JSONL snapshot file")
+    context_candidates.add_argument("--event-id", help="select an event from a multi-event JSONL input")
+
     llm = sub.add_parser("llm", help="run a Hugging Face causal-LM continuation baseline")
     llm.add_argument("--model", default="openai-community/gpt2")
     llm.add_argument("--revision", help="Hugging Face model commit; the default GPT-2 revision is pinned")
@@ -343,6 +349,17 @@ def main(argv: list[str] | None = None) -> int:
                 "test_metrics": result["test_metrics"],
                 "test_predictions": result["test_predictions"],
                 "limitations": result["limitations"],
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "context-candidates":
+            import json
+            from .context_candidates import extract_context_candidates, load_context_record
+
+            record = load_context_record(args.input, args.event_id)
+            print(json.dumps({
+                "event_id": record["event_id"],
+                "event_date": record["event_date"],
+                "candidate_policy": "heuristic source-derived topics; evidence scores are not probabilities",
+                "candidates": extract_context_candidates(record["sources"], record["event_date"]),
             }, ensure_ascii=False, indent=2))
         elif args.command == "llm":
             from .hybrid import combine_candidate_mass

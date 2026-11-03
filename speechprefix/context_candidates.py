@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date
+import json
 import math
+from pathlib import Path
 import re
 from typing import Any
 
@@ -72,6 +74,47 @@ TOPICS = {
         "pattern": re.compile(r"\b(education|school|religion|christian|gender|family|abortion|culture|heritage|monument)\b", re.I),
     },
 }
+
+
+def load_context_record(path: str | Path, event_id: str | None = None) -> dict[str, Any]:
+    """Load one JSON context map or one event from a context-snapshot JSONL file."""
+    source = Path(path)
+    if source.suffix == ".jsonl":
+        rows = []
+        with source.open(encoding="utf-8") as stream:
+            for line_number, line in enumerate(stream, 1):
+                if not line.strip():
+                    continue
+                try:
+                    rows.append(json.loads(line))
+                except json.JSONDecodeError:
+                    raise ValueError(f"invalid JSONL at {source}:{line_number}") from None
+    else:
+        try:
+            payload = json.loads(source.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            raise ValueError(f"invalid JSON in {source}") from None
+        rows = payload if isinstance(payload, list) else [payload]
+    if any(not isinstance(row, dict) for row in rows):
+        raise ValueError("context input must contain JSON objects")
+    if event_id is not None:
+        rows = [
+            row for row in rows
+            if row.get("event_id") == event_id
+            or (isinstance(row.get("event"), dict) and row["event"].get("event_id") == event_id)
+        ]
+    elif len(rows) > 1:
+        raise ValueError("--event-id is required when the input contains multiple events")
+    if len(rows) != 1:
+        raise ValueError("context event was not found or is ambiguous")
+    row = rows[0]
+    event = row.get("event", {})
+    as_of = row.get("event_date") or (event.get("event_date") if isinstance(event, dict) else None)
+    sources = row.get("candidate_sources") or row.get("pre_speech_context_sources")
+    if not isinstance(as_of, str) or not isinstance(sources, list):
+        raise ValueError("context record must include an event date and source list")
+    return {"event_id": row.get("event_id") or (event.get("event_id") if isinstance(event, dict) else None),
+            "event_date": as_of, "sources": sources}
 
 
 def extract_context_candidates(sources: list[dict[str, Any]], as_of: str) -> list[dict[str, Any]]:
