@@ -1,9 +1,14 @@
 import json
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
-from speechprefix.context_snapshots import audit_legacy_snapshots, validate_prospective_snapshot
+from speechprefix.context_snapshots import (
+    audit_legacy_snapshots,
+    seal_prospective_snapshot,
+    validate_prospective_snapshot,
+)
 
 
 class ContextSnapshotTests(unittest.TestCase):
@@ -37,6 +42,25 @@ class ContextSnapshotTests(unittest.TestCase):
         self.assertTrue(result["strict_prospective_eligible"])
         self.assertEqual(result["candidate_source_count"], 1)
 
+    def test_seal_sets_time_and_detects_content_mutation(self):
+        snapshot = self._valid_snapshot()
+        snapshot["snapshot_frozen_at"] = "1999-01-01T00:00:00Z"
+        sealed = seal_prospective_snapshot(
+            snapshot, frozen_at=datetime(2025, 5, 14, 16, tzinfo=timezone.utc),
+        )
+        validated = validate_prospective_snapshot(sealed)
+        self.assertTrue(validated["strict_prospective_eligible"])
+        self.assertEqual(sealed["snapshot_frozen_at"], "2025-05-14T16:00:00+00:00")
+        sealed["candidate_sources"][0]["title"] = "edited after freezing"
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            validate_prospective_snapshot(sealed)
+
+    def test_seal_rejects_a_cutoff_that_has_passed(self):
+        with self.assertRaisesRegex(ValueError, "at or after"):
+            seal_prospective_snapshot(
+                self._valid_snapshot(), frozen_at=datetime(2025, 5, 14, 17, tzinfo=timezone.utc),
+            )
+
     def test_rejects_date_only_or_timezone_naive_cutoff(self):
         snapshot = self._valid_snapshot()
         snapshot["prediction_cutoff_at"] = "2025-05-14"
@@ -44,6 +68,12 @@ class ContextSnapshotTests(unittest.TestCase):
             validate_prospective_snapshot(snapshot)
         snapshot["prediction_cutoff_at"] = "2025-05-14T17:00:00"
         with self.assertRaisesRegex(ValueError, "timezone"):
+            validate_prospective_snapshot(snapshot)
+
+    def test_rejects_target_transcript_fields(self):
+        snapshot = self._valid_snapshot()
+        snapshot["transcript_text"] = "Leakage"
+        with self.assertRaisesRegex(ValueError, "must not include transcript"):
             validate_prospective_snapshot(snapshot)
 
     def test_rejects_retrospective_source_and_unverified_location(self):

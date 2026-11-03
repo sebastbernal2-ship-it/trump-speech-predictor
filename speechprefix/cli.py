@@ -131,6 +131,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     context_snapshot_validate.add_argument("--input", required=True, help="prospective snapshot JSON")
 
+    context_snapshot_seal = sub.add_parser(
+        "context-snapshot-seal", help="freeze a future-event snapshot now and write an immutable hashed copy"
+    )
+    context_snapshot_seal.add_argument("--input", required=True, help="snapshot JSON with event and source provenance")
+    context_snapshot_seal.add_argument("--output", required=True, help="new output path; existing files are never overwritten")
+
     theme_review = sub.add_parser(
         "theme-review-packet", help="generate two blinded, transcript-only theme annotation packets"
     )
@@ -422,6 +428,22 @@ def main(argv: list[str] | None = None) -> int:
             except json.JSONDecodeError as exc:
                 raise ValueError(f"invalid snapshot JSON: {exc}") from None
             print(json.dumps(validate_prospective_snapshot(snapshot), ensure_ascii=False, indent=2))
+        elif args.command == "context-snapshot-seal":
+            import json
+            from pathlib import Path
+            from .context_snapshots import seal_prospective_snapshot
+
+            try:
+                snapshot = json.loads(Path(args.input).read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"invalid snapshot JSON: {exc}") from None
+            sealed = seal_prospective_snapshot(snapshot)
+            output = Path(args.output)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            if output.exists():
+                raise FileExistsError(f"refusing to overwrite existing snapshot: {output}")
+            output.write_text(json.dumps(sealed, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            print(json.dumps({"output": str(output), "snapshot_sha256": sealed["snapshot_sha256"]}, indent=2))
         elif args.command == "theme-review-packet":
             import json
             from .theme_review import generate_theme_review_packets

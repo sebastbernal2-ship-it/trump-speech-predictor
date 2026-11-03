@@ -1,7 +1,7 @@
 """Prospective context-snapshot validation and legacy-pilot audit."""
 
 from __future__ import annotations
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -45,6 +45,9 @@ def validate_prospective_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("snapshot must be an object")
     if snapshot.get("schema_version") != 2 or snapshot.get("protocol") != "prospective-freeze-v2":
         raise ValueError("prospective snapshots must use schema_version 2 and prospective-freeze-v2")
+    forbidden = {"transcript", "transcript_text", "target_text", "target_ideas", "theme_labels", "draft_themes", "outcome_labels"}
+    if forbidden.intersection(snapshot):
+        raise ValueError("prospective context snapshot must not include transcript or target-label fields")
     event_id = snapshot.get("event_id")
     if not isinstance(event_id, str) or not event_id.strip():
         raise ValueError("event_id is required")
@@ -87,7 +90,36 @@ def validate_prospective_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(source.get("publisher"), str) or not source["publisher"].strip():
             raise ValueError(f"candidate_sources[{index}].publisher is required")
         _validate_available_source(source, f"candidate_sources[{index}]", cutoff, frozen)
+    digest = snapshot.get("snapshot_sha256")
+    if digest is not None:
+        payload = {key: value for key, value in snapshot.items() if key != "snapshot_sha256"}
+        canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        expected = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        if digest != expected:
+            raise ValueError("snapshot_sha256 does not match snapshot content")
     return {"event_id": event_id, "candidate_source_count": len(sources), "strict_prospective_eligible": True}
+
+
+def seal_prospective_snapshot(snapshot: dict[str, Any], *, frozen_at: datetime | None = None) -> dict[str, Any]:
+    """Set freeze time from the current clock, validate, and attach a content hash."""
+    if not isinstance(snapshot, dict):
+        raise ValueError("snapshot must be an object")
+    sealed = {key: value for key, value in snapshot.items() if key not in {"snapshot_sha256", "snapshot_frozen_at"}}
+    frozen = frozen_at or datetime.now(timezone.utc)
+    if frozen.tzinfo is None or frozen.utcoffset() is None:
+        raise ValueError("frozen_at must include a timezone")
+    sealed.update({
+        "schema_version": 2,
+        "protocol": "prospective-freeze-v2",
+        "snapshot_frozen_at": frozen.isoformat(),
+    })
+    validate_prospective_snapshot(sealed)
+    cutoff = _timestamp(sealed["prediction_cutoff_at"], "prediction_cutoff_at")
+    if frozen >= cutoff:
+        raise ValueError("cannot seal a snapshot at or after its prediction cutoff")
+    canonical = json.dumps(sealed, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    sealed["snapshot_sha256"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return sealed
 
 
 def audit_legacy_snapshots(snapshots_path: str | Path, *, output_path: str | Path | None = None) -> dict[str, Any]:
