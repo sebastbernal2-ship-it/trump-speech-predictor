@@ -55,6 +55,14 @@ class SpeakerIdeaForecastTests(unittest.TestCase):
             self.assertEqual(delta["events"], 3)
             self.assertEqual(delta["date_clusters"], 2)
             self.assertIn("cluster_bootstrap_95pct_ci", delta["ndcg_at_10"])
+            self.assertEqual(report["schema_version"], 2)
+            errors = report["test_error_analysis_at_10"]
+            self.assertEqual(errors["events"], 3)
+            self.assertEqual(
+                errors["missed_target_phrase_instances"],
+                sum(errors["missed_target_decomposition"].values()),
+            )
+            self.assertGreater(report["test_probability_diagnostic"]["candidate_event_pairs"], 0)
             self.assertIn(report["selected_half_life_days"], (30, 90, 180, 365, 730, None))
             self.assertEqual(len(report["test_predictions"]), 3)
             last_date_predictions = [

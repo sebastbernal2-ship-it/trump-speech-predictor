@@ -496,6 +496,8 @@ def main(argv: list[str] | None = None) -> int:
                 "validation_metrics_fixed_day_windows": result["validation_metrics_fixed_day_windows"],
                 "test_metrics": result["test_metrics"],
                 "test_metric_differences": result["test_metric_differences"],
+                "test_error_analysis_at_10": result["test_error_analysis_at_10"],
+                "test_probability_diagnostic": result["test_probability_diagnostic"],
                 "limitations": result["limitations"],
             }, ensure_ascii=False, indent=2))
         elif args.command == "context-theme-evaluate":
