@@ -421,15 +421,28 @@ def main(argv: list[str] | None = None) -> int:
             from .headline_idea_matching import evaluate_headline_idea_overlap
 
             result = evaluate_headline_idea_overlap(args.snapshots, args.events, output_path=args.output)
-            ukraine_ideas = [
-                {"event_id": event["event_id"], "date": event["event_date"],
-                 "ideas": event["war_ukraine_russia_transcript_ideas"]}
-                for event in result["events"] if event["war_ukraine_russia_transcript_ideas"]
-            ]
+            event_ideas = []
+            for event in result["events"]:
+                event_ideas.append({
+                    "event_id": event["event_id"],
+                    "date": event["event_date"],
+                    "transcript_derived_ideas": [
+                        {"idea": idea["candidate_idea"], "occurrences": idea["occurrence_count"],
+                         "turn_ids": idea["supporting_turn_ids"],
+                         "headline_support": [source["title"] for source in idea["context_matches"]]}
+                        for idea in event["transcript_top_ideas"][:10]
+                    ],
+                    "headline_derived_candidates": [
+                        {"idea": idea["candidate_idea"], "source_count": idea["source_count"],
+                         "mentioned_by_target": idea["mentioned_by_target"],
+                         "transcript_turn_ids": [match["turn_id"] for match in idea["transcript_matches"]]}
+                        for idea in event["top_ideas"][:10]
+                    ],
+                })
             print(json.dumps({
                 "output": args.output,
                 "summary_by_top_k": result["summary_by_top_k"],
-                "ukraine_russia_war_examples": ukraine_ideas,
+                "events": event_ideas,
                 "limitations": result["limitations"],
             }, ensure_ascii=False, indent=2))
         elif args.command == "context-candidates":

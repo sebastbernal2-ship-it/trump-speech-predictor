@@ -37,6 +37,23 @@ class HeadlineIdeaMatchingTests(unittest.TestCase):
         self.assertEqual(idea["candidate_idea"], "war Ukraine")
         self.assertEqual(idea["supporting_turn_ids"], ["turn-ukraine"])
 
+    def test_strips_bracketed_audience_cues_from_target_ideas(self):
+        ideas = extract_transcript_ideas([{
+            "turn_id": "turn-stage-cue",
+            "text": "Hillary Clinton [Audience shouts Boo] will end the war in Ukraine."
+        }])
+        self.assertTrue(any(idea["idea_id"] == "ukraine war" for idea in ideas))
+        self.assertFalse(any("audience" in idea["idea_id"] or "boo" in idea["idea_id"] for idea in ideas))
+
+    def test_drops_generic_crowd_fillers_and_country_references(self):
+        ideas = extract_transcript_ideas([{
+            "turn_id": "turn-generic",
+            "text": "So Karen is here. We love the United States."
+        }])
+        idea_ids = {idea["idea_id"] for idea in ideas}
+        self.assertNotIn("karen so", idea_ids)
+        self.assertNotIn("state united", idea_ids)
+
     def test_does_not_combine_terms_across_separate_turns(self):
         idea = {"normalized_terms": ["ukraine", "war"]}
         turns = [
