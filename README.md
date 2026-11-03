@@ -44,19 +44,27 @@ In stream mode, submit each new chunk on its own line. A blank line exits. For S
 .venv/bin/python -m speechprefix hybrid --model checkpoints/speechplan-h-run-001.pt --prefix "We have been discussing our plans" --question "What is the plan?"
 ```
 
-The older `pretrained-hybrid` command is only a candidate-fusion comparison baseline; it may use external checkpoints. Both trained-model commands append immutable run metadata and artifact hashes to `models/registry.jsonl` and refuse to overwrite an existing artifact. SpeechPlan-H's architecture and known limits are described in `docs/speechplan-hybrid.md`.
+After `data/rollcall-speech-plans.jsonl` contains reviewed plan labels, train and query the separate explicit plan-path predictor:
+
+```sh
+.venv/bin/python -m speechprefix explicit-plan-train --events data/rollcall-events.jsonl --plans data/rollcall-speech-plans.jsonl --output checkpoints/explicit-plan-run-001.pt
+.venv/bin/python -m speechprefix explicit-plan-predict --model checkpoints/explicit-plan-run-001.pt --prefix "Observed speech prefix"
+```
+
+The older `pretrained-hybrid` command is only a candidate-fusion comparison baseline; it may use external checkpoints. All trained-model commands append immutable run metadata and artifact hashes to `models/registry.jsonl` and refuse to overwrite an existing artifact. SpeechPlan-H's architecture and known limits are described in `docs/speechplan-hybrid.md`.
 
 `segment` is the legacy paragraph-based pipeline; its question-response links are heuristic and are not the target representation for live exchanges. With source permission, `import-rollcall` collects Roll Call Factba.se's timestamped event pages into the separate, ignored `data/rollcall-events.jsonl`; `split-rollcall` derives disjoint Trump speech, Q&A-candidate, other-Trump, and non-Trump files without changing the master corpus. `turn-import` parses a manually saved time-coded page. Both preserve speaker turns, timestamps, page annotations, and source attribution without guessing which question a response answers. `prepare-rollcall-speeches` exports long, Trump-dominant speech text for continuation training; timestamped Q&A events still need reviewed response links before supervised use. See `data/README.md` for the split and export details. Legacy paragraph-based Q&A results are not live-response performance. `context-fetch` calls the public Federal Register API without an API key and stores dated titles/abstracts locally; it excludes documents published on the prediction date because transcript event times are unavailable. The current Federal Register sample is unpaired and is not model input. Current legacy-corpus counts and limitations are in `docs/data-audit.md`.
 
-## Three tasks, separate evaluations
+## Prediction tasks, separate evaluations
 
 - **Pre-speech forecast:** Given only historical speeches, rank recurring phrases likely to appear in the next speech. The initial baseline uses dated JSONL metadata and walk-forward evaluation. It is a phrase-recurrence baseline, not a semantic topic model.
 - **Continuation:** Given an observed transcript prefix, predict its next word(s). Replay held-out speeches sequentially and score each prediction before revealing the next word.
+- **In-speech plan path:** Given the same kind of observed prefix, predict one theme → section → talking-point path. Score it against reviewed plan text, separately from next-word continuation; the current plan model is untrained on real reviewed plans.
 - **Question-anchored response:** Given the observed turns and a reviewer-selected question/prompt trigger in a time-coded event, predict the target speaker's likely ideas and exact words. Triggers can include follow-ups and the target speaker's own clarifying questions. Score ideas separately from wording and track whether another speaker responds or the target does not.
 
 Never mix these scores. A continuation model sees the target transcript prefix; a pre-speech model must not. Question-response evaluation must reveal only turns observable by its prediction time.
 
-SpeechPlan-H is a from-scratch prototype with a coarse-to-fine residual VQ planner whose predicted codes become cross-attention memory for an autoregressive Transformer decoder. It is a small word-level language model, not a pretrained large language model. Its training code performs a chronological, whole-date split, but the legacy input corpus contains mixed presidential records that have not been manually verified as speeches. Treat those metrics as plumbing checks. SpeechPlan-H can train continuation from the derived long-speech export, but its response-training path is not connected to timestamped Q&A events. The proposed explicit theme → section → talking-point plan is documented separately and requires reviewed labels before model training. Exact wording and semantic idea predictions need separate evaluations.
+SpeechPlan-H is a from-scratch prototype with a coarse-to-fine residual VQ planner whose predicted codes become cross-attention memory for an autoregressive Transformer decoder. It is a small word-level language model, not a pretrained large language model. Its training code performs a chronological, whole-date split, but the legacy input corpus contains mixed presidential records that have not been manually verified as speeches. Treat those metrics as plumbing checks. SpeechPlan-H can train continuation from the derived long-speech export, but its response-training path is not connected to timestamped Q&A events. The separate explicit plan-path model predicts a theme → section → talking-point path from a transcript prefix. It is implemented but untrained on real events because reviewed plan labels do not yet exist. It does not generate wording or condition the SpeechPlan-H decoder; see `docs/hierarchical-speech-planner.md`.
 
 ## Data and evaluation cautions
 

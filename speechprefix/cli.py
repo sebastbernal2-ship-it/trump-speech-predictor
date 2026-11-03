@@ -125,6 +125,26 @@ def main(argv: list[str] | None = None) -> int:
     hybrid_train.add_argument("--max-steps", type=int, default=0, help="cap training steps per epoch for smoke tests")
     hybrid_train.add_argument("--evidence-pairs", help="dated evidence mappings keyed by question segment ID")
 
+    explicit_train = sub.add_parser(
+        "explicit-plan-train", help="train the separate theme/section/talking-point predictor on reviewed plans"
+    )
+    explicit_train.add_argument("--events", default="data/rollcall-events.jsonl")
+    explicit_train.add_argument("--plans", default="data/rollcall-speech-plans.jsonl")
+    explicit_train.add_argument("--output", default="checkpoints/explicit-plan-run-001.pt")
+    explicit_train.add_argument("--registry", default="models/registry.jsonl")
+    explicit_train.add_argument("--epochs", type=int, default=5)
+    explicit_train.add_argument("--batch-size", type=int, default=16)
+    explicit_train.add_argument("--device", default="auto")
+    explicit_train.add_argument("--max-steps", type=int, default=0)
+
+    explicit_predict = sub.add_parser(
+        "explicit-plan-predict", help="predict a theme/section/talking-point path from an observed prefix"
+    )
+    explicit_predict.add_argument("--model", required=True)
+    explicit_predict.add_argument("--prefix", required=True)
+    explicit_predict.add_argument("--tokens", type=int, default=96)
+    explicit_predict.add_argument("--device", default="auto")
+
     hybrid = sub.add_parser("hybrid", help="generate with a trained from-scratch SpeechPlan-H checkpoint")
     hybrid.add_argument("--model", required=True)
     hybrid.add_argument("--prefix", required=True)
@@ -312,6 +332,28 @@ def main(argv: list[str] | None = None) -> int:
                 registry_path=args.registry,
             )
             print(f"Saved SpeechPlan-H version {result['model_version']}: {result['output']}")
+        elif args.command == "explicit-plan-train":
+            from .explicit_plan import train_explicit_plan_model
+
+            result = train_explicit_plan_model(
+                args.events, args.plans, args.output,
+                registry_path=args.registry, epochs=args.epochs,
+                batch_size=args.batch_size, max_steps=args.max_steps,
+                device_name=args.device,
+            )
+            print(
+                f"Saved explicit plan version {result['model_version']} to {result['output']}; "
+                f"held-out loss={result['test']['loss']:.4f}, "
+                f"greedy exact path accuracy={result['test']['greedy_exact_path_accuracy']:.4f}"
+            )
+        elif args.command == "explicit-plan-predict":
+            import json
+            from .explicit_plan import predict_plan_path
+
+            print(json.dumps(predict_plan_path(
+                args.model, args.prefix, device_name=args.device,
+                max_new_tokens=args.tokens,
+            ), ensure_ascii=False))
         elif args.command == "hybrid":
             from .hybrid_train import generate_hybrid
 

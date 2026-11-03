@@ -72,4 +72,8 @@ Only `review_status: "reviewed"` plans with a reviewer and valid target-speaker 
 
 Evaluate theme, section, and talking-point prediction separately from exact wording. Split by whole event dates. For in-speech predictions, compare only plan nodes grounded in transcript spans that occur after the prediction point; do not expose those nodes or their text in the input. Keep this task separate from pre-speech forecasts and question-anchored response prediction.
 
-The current model does not implement this hierarchy yet. It has no theme/section/talking-point outputs; the data contract and pilot annotations must exist before adding and training those heads.
+## First explicit model version
+
+`explicit-plan-train` trains a separate, from-scratch causal language model that predicts one structured theme → section → talking-point path from the observed transcript prefix. It accepts only `review_status: "reviewed"` plans, splits by whole event dates, and keeps each target point's cited transcript turns out of its input. Its test metrics are token loss, teacher-forced token accuracy, and exact generated-path match; exact text match is not semantic idea accuracy.
+
+This first model predicts the plan path only. It does not generate surface wording or condition SpeechPlan-H's word decoder. The Roll Call review batch currently contains one assistant-drafted, unreviewed outline and no reviewed plan set, so a real-corpus training run is not yet valid. Synthetic fixtures exercise the training path but do not count as model results. Every eventual run is registered separately; see `docs/model-versioning.md`.

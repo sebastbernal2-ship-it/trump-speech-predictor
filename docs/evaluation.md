@@ -10,6 +10,15 @@
 
 SpeechPlan-H continuation metrics use teacher-forced target windows and do not establish sequential online quality, calibration, or broad speech coverage. The current corpus contains mixed presidential documents, not a reviewed speech-only set. The n-gram CLI evaluator is separately minimal: it trains on all but the final record and scores that record. Both are prototype checks, not complete research protocols.
 
+## In-speech explicit plan-path prediction
+
+- Split by whole event dates before expanding reviewed plans into next-point examples.
+- For each talking point, predict its theme/section/point path from only turns that ended before the first supporting target turn begins.
+- Report plan-token loss, teacher-forced token accuracy, and greedy exact-path match. These measure reproduction of reviewed path text, not semantic quality or wording quality.
+- Report semantic idea metrics only after the labels and output mapping are human-reviewed. Keep these results separate from continuation and question-anchored response metrics.
+
+The current explicit plan-path implementation is untrained on real reviewed plans. Synthetic fixture scores are plumbing checks only. See `docs/hierarchical-speech-planner.md` for the model and plan schema.
+
 ## Question-anchored response prediction
 
 - Keep this task distinct from ordinary continuation and before-speech forecasting.
