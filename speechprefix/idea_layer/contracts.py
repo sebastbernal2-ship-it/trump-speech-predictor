@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import hashlib
+import json
 import math
 import re
 from typing import Any
@@ -132,6 +133,59 @@ def validate_event_manifest(manifest: dict[str, Any]) -> dict[str, str]:
         if not isinstance(source_ids, list) or not source_ids or any(not isinstance(item, str) or not item for item in source_ids):
             raise ValueError(f"known_context[{index}].source_ids must be a nonempty list of IDs")
     return {"event_id": event_id, "event_start_at": event_start.isoformat(), "prediction_cutoff_at": cutoff.isoformat()}
+
+
+def validate_idea_input_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Validate a frozen, content-addressed bundle of pre-cutoff event inputs."""
+    if not isinstance(snapshot, dict):
+        raise ValueError("input snapshot must be an object")
+    _reject_forbidden_keys(snapshot, "input_snapshot")
+    if snapshot.get("schema_version") != 1 or snapshot.get("record_type") != "idea-layer-input-snapshot":
+        raise ValueError("input snapshot must use schema_version 1 and record_type idea-layer-input-snapshot")
+    manifest = snapshot.get("event_manifest")
+    event = validate_event_manifest(manifest)
+    if snapshot.get("event_id") != event["event_id"]:
+        raise ValueError("snapshot event_id does not match event manifest")
+    cutoff = _timestamp(event["prediction_cutoff_at"], "prediction_cutoff_at")
+    created = _timestamp(snapshot.get("snapshot_created_at"), "snapshot_created_at")
+    if created >= cutoff:
+        raise ValueError("input snapshot must be frozen strictly before prediction cutoff")
+    sources = snapshot.get("sources")
+    input_ids = snapshot.get("input_source_ids")
+    if not isinstance(sources, list) or not isinstance(input_ids, list):
+        raise ValueError("snapshot sources and input_source_ids must be lists")
+    source_by_id = {}
+    for source in sources:
+        validated = validate_source_evidence(source)
+        source_id = validated["source_id"]
+        if source_id in source_by_id:
+            raise ValueError(f"duplicate source_id in snapshot: {source_id}")
+        source_by_id[source_id] = source
+        observed = _timestamp(source["observed_at"], "observed_at")
+        if observed > created:
+            raise ValueError(f"source {source_id} was observed after the snapshot was frozen")
+        if not is_source_eligible_at(source, cutoff.isoformat()):
+            raise ValueError(f"source {source_id} is not verified and available before cutoff")
+    if (
+        any(not isinstance(item, str) or not item for item in input_ids)
+        or len(set(input_ids)) != len(input_ids)
+        or set(input_ids) != set(source_by_id)
+    ):
+        raise ValueError("input_source_ids must exactly match the unique source records in the snapshot")
+    required_ids = set(manifest["event_metadata_source_ids"])
+    for fact in manifest.get("known_context", []):
+        required_ids.update(fact["source_ids"])
+    if not required_ids <= set(input_ids):
+        raise ValueError("snapshot omits source evidence for event metadata or known context")
+    digest = snapshot.get("snapshot_sha256")
+    if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
+        raise ValueError("snapshot_sha256 must be a lowercase SHA-256 hex digest")
+    unhashed = {key: value for key, value in snapshot.items() if key != "snapshot_sha256"}
+    canonical = json.dumps(unhashed, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    expected = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    if digest != expected:
+        raise ValueError("snapshot_sha256 does not match snapshot content")
+    return {"event_id": event["event_id"], "source_count": len(sources), "strict_pre_cutoff": True}
 
 
 def validate_pre_speech_forecast(

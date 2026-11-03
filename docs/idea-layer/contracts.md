@@ -20,13 +20,17 @@ The content hash must match the stored content. `verified_before_cutoff` is an e
 
 Use `schema_version: 1`, `record_type: "idea-layer-event"`, a stable `event_id`, timezone-aware `event_start_at` and `prediction_cutoff_at`, and `event_metadata_source_ids`. The cutoff must strictly precede the scheduled start. `known_context` is a list of `{fact_id, fact, source_ids}`; every fact cites its source records. Do not put transcripts, post-event descriptions, or target labels in the manifest.
 
-## 3. Frozen pre-speech forecast
+## 3. Frozen input snapshot
+
+`idea-source-import` appends validated source records to `data/idea-layer/source-ledger.jsonl`; identical IDs are idempotent, conflicting IDs fail. `idea-snapshot-freeze` selects verified event metadata and eligible evidence from the requested pre-cutoff lookback, embeds the selected source records, stores the manifest hash, and adds a content hash. Use `schema_version: 1`, `record_type: "idea-layer-input-snapshot"`, `event_id`, the exact cutoff, `snapshot_created_at`, the event manifest, unique `input_source_ids`, `sources`, and `snapshot_sha256`. A snapshot cannot be rewritten; make a new artifact for a new cutoff.
+
+## 4. Frozen pre-speech forecast
 
 Use `schema_version: 1`, `record_type: "idea-layer-forecast"`, a unique `forecast_id`, `input_snapshot_sha256`, `event_id`, the manifest’s exact `prediction_cutoff_at`, `generated_at` (strictly before cutoff), `model_version`, `input_source_ids`, and ordered `candidates`.
 
 Each candidate has a stable `idea_id`, readable `idea`, unique positive `rank`, numeric `score`, `score_kind`, and nonempty `evidence_source_ids` drawn from the frozen input set. `score_kind: "ranking_score"` is the default. `score_kind: "probability"` additionally requires a calibration report reference. Every event-metadata and known-context source must be in the frozen inputs. Forecast records reject transcript/outcome fields.
 
-## 4. Append-only in-speech update
+## 5. Append-only in-speech update
 
 Use `schema_version: 1`, `record_type: "idea-layer-update"`, `event_id`, `forecast_id`, `updated_at`, the unique `observed_turn_ids` available at that update, and `changes`. Each change contains `idea_id`, an action (`added`, `raised`, `lowered`, `removed`, `unchanged`), and optional `evidence_turn_ids`. A cited turn must be in the visible-turn list supplied to the validator. Save each update as a new record; never rewrite the initial forecast.
 

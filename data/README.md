@@ -90,6 +90,10 @@ Prediction alignments are supplied in the optional `prediction_annotations` arra
 
 Idea labels must be human-reviewed semantic tags. They are evaluated separately from the exact transcript words. StressLens, topics, entities, and moderation labels remain source annotations; they are not treated as verified idea labels. The `prediction_example_inputs` helper separates `input`, `target`, and `provenance`; use only the `input` object as model features. Page metadata and per-span annotations are kept in provenance because they may not have been available at the prediction time.
 
+## Standalone idea-layer evidence
+
+`speechprefix idea-source-import --input <sources.jsonl> --ledger data/idea-layer/source-ledger.jsonl` validates and appends source records; `speechprefix idea-snapshot-freeze --manifest <event.json> --ledger data/idea-layer/source-ledger.jsonl --output <new-snapshot.json>` freezes verified event metadata, current news, and posts observed before the declared cutoff. The ledger and snapshots are local/Git-ignored. Source rows must retain publication/observation timestamps, content hashes, original URLs or post IDs, and reuse terms. This is an import/freeze foundation only: it does not fetch news or social posts and does not yet rank ideas. See `docs/idea-layer/contracts.md` for exact record fields.
+
 ## Issue-phrase review sample
 
 `rollcall-theme-review-selection-v2.jsonl` is a deterministic, quarter-stratified random sample of four events from each quarter, 2024-Q4 through 2025-Q4 (20 total), drawn from the pre-test 2024-10-11 to 2025-12-24 transcript frame. Selection seed: 240717. The two blank transcript-only reviewer packets are `rollcall-theme-review-annotator-a-v2.jsonl` and `rollcall-theme-review-annotator-b-v2.jsonl`; they omit IDs, dates, titles, URLs, predictions, and extracted issue phrases. Reviewers are prompted to list event-specific ideas before seeing the fixed family taxonomy. The taxonomy definitions are assistant-proposed and not human-adjudicated; they are not gold labels.
