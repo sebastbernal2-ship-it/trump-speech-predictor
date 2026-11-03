@@ -31,9 +31,17 @@ A post-export line has this shape (replace placeholders with verified values; do
 ```json
 {"schema_version":1,"record_type":"idea-layer-trump-post-export","platform":"truth_social","account":"realDonaldTrump","post_id":"<platform-id>","permalink":"https://<platform-post-url>","text":"<exact post text>","published_at":"2030-01-20T12:30:00Z","observed_at":"2030-01-20T12:35:00Z","availability_status":"verified_before_cutoff","availability_evidence":"<archive capture or timestamp evidence>","timestamp_basis":"<platform timestamp field or archived timestamp basis>","reuse_terms":"<applicable terms or unresolved status>"}
 ```
-## 4. Frozen pre-speech forecast
+## 4. Proposal set and frozen pre-speech forecast
 
-Use `schema_version: 1`, `record_type: "idea-layer-forecast"`, a unique `forecast_id`, `input_snapshot_sha256`, `event_id`, the manifest’s exact `prediction_cutoff_at`, `generated_at` (strictly before cutoff), `model_version`, `input_source_ids`, and ordered `candidates`.
+A provider-neutral proposal set uses `schema_version: 1`, `record_type: "idea-layer-proposal-set"`, `proposal_set_id`, the exact `input_snapshot_sha256`, `generated_at` (strictly before cutoff), `generator`, an array of `{idea_id, idea, evidence_source_ids}`, and `proposal_set_sha256`. The proposal set must cite only its frozen snapshot. `idea-proposals-seal` takes a JSON array of these candidate objects and records who/what proposed them; proposals may come from a human or a separately versioned semantic model. This layer does not yet generate semantic candidates. The input array looks like:
+
+```json
+[{"idea_id":"issue:energy-security","idea":"Energy security and fuel prices","evidence_source_ids":["news-item-001","post-item-003"]}]
+```
+
+`idea-rank` applies the transparent `evidence-weighted-baseline-v1` score to the proposal set: source weights are 2.5 for Trump posts, 1.5 for other primary sources, 1.0 for news, and 0.75 for event metadata; non-event sources use a 14-day recency half-life, while event metadata does not decay. It sums cited-source contributions. This is a plumbing/baseline score, not semantic accuracy or a probability; it only verifies citation membership, not whether a citation actually supports an idea, and more cited sources can raise a score. Do not tune the weights on synthetic fixtures or describe the score as calibrated.
+
+Use `schema_version: 1`, `record_type: "idea-layer-forecast"`, a unique `forecast_id`, `input_snapshot_sha256`, `proposal_set_id` and hash, `event_id`, the manifest’s exact `prediction_cutoff_at`, `input_snapshot_created_at`, `generated_at` (not earlier than the snapshot and strictly before cutoff), `model_version`, `input_source_ids`, ordered `candidates`, and `forecast_sha256`. The hash covers the complete forecast content.
 
 Each candidate has a stable `idea_id`, readable `idea`, unique positive `rank`, numeric `score`, `score_kind`, and nonempty `evidence_source_ids` drawn from the frozen input set. `score_kind: "ranking_score"` is the default. `score_kind: "probability"` additionally requires a calibration report reference. Every event-metadata and known-context source must be in the frozen inputs. Forecast records reject transcript/outcome fields.
 

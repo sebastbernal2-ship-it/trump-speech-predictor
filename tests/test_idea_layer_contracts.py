@@ -3,6 +3,7 @@ import unittest
 
 from speechprefix.idea_layer.contracts import (
     is_source_eligible_at,
+    seal_pre_speech_forecast,
     validate_event_manifest,
     validate_idea_update,
     validate_pre_speech_forecast,
@@ -64,13 +65,17 @@ class IdeaLayerContractsTests(unittest.TestCase):
         ]
 
     def _forecast(self):
-        return {
+        return seal_pre_speech_forecast({
             "schema_version": 1,
             "record_type": "idea-layer-forecast",
             "forecast_id": "forecast-2030-01-20-v0",
             "input_snapshot_sha256": "a" * 64,
+            "proposal_set_id": "proposal-set-2030-01-20",
+            "proposal_set_sha256": "b" * 64,
+            "proposal_generator": "test-fixture",
             "event_id": "speech-2030-01-20",
             "prediction_cutoff_at": "2030-01-20T16:00:00Z",
+            "input_snapshot_created_at": "2030-01-20T15:50:00Z",
             "generated_at": "2030-01-20T15:55:00Z",
             "model_version": "idea-context-v0",
             "input_source_ids": ["schedule", "news-oil", "trump-post"],
@@ -82,7 +87,7 @@ class IdeaLayerContractsTests(unittest.TestCase):
                 "score_kind": "ranking_score",
                 "evidence_source_ids": ["news-oil", "trump-post"],
             }],
-        }
+        })
 
     def test_verified_source_requires_explicit_timestamp_and_availability_evidence(self):
         source = self._sources()[1]
@@ -144,6 +149,7 @@ class IdeaLayerContractsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "calibration_ref"):
             validate_pre_speech_forecast(forecast, self._manifest(), self._sources())
         forecast["candidates"][0]["calibration_ref"] = "calibration-report-sha256"
+        forecast = seal_pre_speech_forecast(forecast)
         self.assertTrue(validate_pre_speech_forecast(forecast, self._manifest(), self._sources())["strict_pre_cutoff"])
 
     def test_live_update_can_only_raise_ideas_from_already_visible_turns(self):

@@ -39,6 +39,15 @@ def _required_text(record: dict[str, Any], key: str, field: str | None = None) -
     return value.strip()
 
 
+def seal_pre_speech_forecast(forecast: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy with a SHA-256 digest over its complete content."""
+    sealed = json.loads(json.dumps(forecast, ensure_ascii=False))
+    sealed.pop("forecast_sha256", None)
+    canonical = json.dumps(sealed, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    sealed["forecast_sha256"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return sealed
+
+
 def _reject_forbidden_keys(value: Any, field: str = "record") -> None:
     if isinstance(value, dict):
         normalized_keys = {key.casefold().replace("-", "_").replace(" ", "_") for key in value}
@@ -192,6 +201,12 @@ def validate_idea_input_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
         required_ids.update(fact["source_ids"])
     if not required_ids <= set(input_ids):
         raise ValueError("snapshot omits source evidence for event metadata or known context")
+    wrong_metadata_types = sorted(
+        source_id for source_id in manifest["event_metadata_source_ids"]
+        if source_by_id[source_id]["source_type"] != "event_metadata"
+    )
+    if wrong_metadata_types:
+        raise ValueError(f"event_metadata_source_ids must reference event_metadata records: {wrong_metadata_types}")
     digest = snapshot.get("snapshot_sha256")
     if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
         raise ValueError("snapshot_sha256 must be a lowercase SHA-256 hex digest")
@@ -205,6 +220,7 @@ def validate_idea_input_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
 
 def validate_pre_speech_forecast(
     forecast: dict[str, Any], manifest: dict[str, Any], sources: list[dict[str, Any]],
+    *, input_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Validate a frozen forecast against only pre-cutoff, traceable source items."""
     if not isinstance(forecast, dict):
@@ -216,6 +232,11 @@ def validate_pre_speech_forecast(
     snapshot_digest = forecast.get("input_snapshot_sha256")
     if not isinstance(snapshot_digest, str) or not _SHA256.fullmatch(snapshot_digest):
         raise ValueError("input_snapshot_sha256 must be a lowercase SHA-256 hex digest")
+    _required_text(forecast, "proposal_set_id")
+    _required_text(forecast, "proposal_generator")
+    proposal_digest = forecast.get("proposal_set_sha256")
+    if not isinstance(proposal_digest, str) or not _SHA256.fullmatch(proposal_digest):
+        raise ValueError("proposal_set_sha256 must be a lowercase SHA-256 hex digest")
     event = validate_event_manifest(manifest)
     if forecast.get("event_id") != event["event_id"]:
         raise ValueError("forecast event_id does not match event manifest")
@@ -223,10 +244,25 @@ def validate_pre_speech_forecast(
     manifest_cutoff = _timestamp(event["prediction_cutoff_at"], "manifest prediction_cutoff_at")
     if cutoff != manifest_cutoff:
         raise ValueError("forecast cutoff must exactly match event manifest")
+    snapshot_created = _timestamp(forecast.get("input_snapshot_created_at"), "input_snapshot_created_at")
+    if snapshot_created >= cutoff:
+        raise ValueError("input snapshot must be created strictly before prediction cutoff")
     generated = _timestamp(forecast.get("generated_at"), "generated_at")
+    if generated < snapshot_created:
+        raise ValueError("forecast cannot predate its input snapshot")
     if generated >= cutoff:
         raise ValueError("forecast must be generated strictly before its prediction cutoff")
+    if input_snapshot is not None:
+        snapshot_info = validate_idea_input_snapshot(input_snapshot)
+        if forecast.get("input_snapshot_sha256") != input_snapshot.get("snapshot_sha256"):
+            raise ValueError("forecast input_snapshot_sha256 does not match supplied snapshot")
+        if forecast.get("input_snapshot_created_at") != input_snapshot.get("snapshot_created_at"):
+            raise ValueError("forecast input snapshot creation time does not match supplied snapshot")
+        if snapshot_info["event_id"] != event["event_id"]:
+            raise ValueError("supplied input snapshot belongs to a different event")
     _required_text(forecast, "model_version")
+    if not isinstance(sources, list):
+        raise ValueError("sources must be a list")
     source_by_id: dict[str, dict[str, Any]] = {}
     for source in sources:
         validated = validate_source_evidence(source)
@@ -234,6 +270,10 @@ def validate_pre_speech_forecast(
         if source_id in source_by_id:
             raise ValueError(f"duplicate source_id: {source_id}")
         source_by_id[source_id] = source
+    if input_snapshot is not None:
+        snapshot_sources = {row["source_id"]: row for row in input_snapshot["sources"]}
+        if source_by_id != snapshot_sources:
+            raise ValueError("supplied source evidence does not match the input snapshot")
     input_ids = forecast.get("input_source_ids")
     if (
         not isinstance(input_ids, list)
@@ -292,6 +332,13 @@ def validate_pre_speech_forecast(
             raise ValueError(f"candidates[{index}].evidence_source_ids must be unique nonempty source IDs")
         if not set(evidence_ids) <= set(input_ids):
             raise ValueError(f"candidates[{index}] cites sources outside forecast inputs")
+    digest = forecast.get("forecast_sha256")
+    if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
+        raise ValueError("forecast_sha256 must be a lowercase SHA-256 hex digest")
+    unhashed = {key: value for key, value in forecast.items() if key != "forecast_sha256"}
+    canonical = json.dumps(unhashed, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    if hashlib.sha256(canonical.encode("utf-8")).hexdigest() != digest:
+        raise ValueError("forecast_sha256 does not match forecast content")
     return {
         "event_id": event["event_id"],
         "candidate_count": len(candidates),
