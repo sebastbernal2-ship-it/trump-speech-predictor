@@ -22,6 +22,18 @@ class ContextCandidateTests(unittest.TestCase):
         self.assertEqual(by_id["biden_garbage_controversy"]["publisher_count"], 2)
         self.assertIn("not_probability", by_id["election_turnout"]["score_type"])
 
+    def test_generates_diplomacy_hostage_and_commerce_candidates(self):
+        sources = [
+            {"title": "Gulf diplomacy and Qatar partnership", "published_at": "2025-05-12", "url": "gulf"},
+            {"title": "Hamas to release hostage as Gaza ceasefire talks resume", "published_at": "2025-05-12", "url": "hostage"},
+            {"title": "Iran and US conclude another round of nuclear talks", "published_at": "2025-05-11", "url": "iran"},
+            {"title": "Commercial investment and business agreements", "published_at": "2025-05-10", "url": "business"},
+        ]
+        candidates = extract_context_candidates(sources, "2025-05-14")
+        self.assertTrue({
+            "gulf_partnership_diplomacy", "gaza_hostages_ceasefire", "foreign_security", "business_investment",
+        }.issubset({candidate["candidate_id"] for candidate in candidates}))
+
     def test_same_day_and_later_sources_are_rejected(self):
         for published in ("2024-10-31", "2024-11-01"):
             with self.subTest(published=published):

@@ -33,7 +33,19 @@ TOPICS = {
     },
     "media_press": {
         "summary": "News media, press coverage, and information disputes",
-        "pattern": re.compile(r"\b(media|news|press|journalist|censorship|censor|broadcast|television)\b", re.I),
+        "pattern": re.compile(r"\b(media|press|journalist|censorship|censor|broadcast|television|cbs|news outlet|news organization)\b", re.I),
+    },
+    "gaza_hostages_ceasefire": {
+        "summary": "Gaza, hostages, ceasefire efforts, and regional mediation",
+        "pattern": re.compile(r"\b(hostage|hostages|hamas|gaza|ceasefire|israel)\b", re.I),
+    },
+    "gulf_partnership_diplomacy": {
+        "summary": "Gulf diplomacy, bilateral ties, and international partnership",
+        "pattern": re.compile(r"\b(qatar|gulf|diplomacy|diplomatic|partnership|bilateral|alliance|relations)\b", re.I),
+    },
+    "business_investment": {
+        "summary": "Commercial ties, investment, and business agreements",
+        "pattern": re.compile(r"\b(investment|commercial|business|contract|dealmaking)\b", re.I),
     },
     "foreign_security": {
         "summary": "Foreign affairs, military strength, war, and national security",
