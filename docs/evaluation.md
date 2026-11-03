@@ -10,15 +10,16 @@
 
 SpeechPlan-H continuation metrics use teacher-forced target windows and do not establish sequential online quality, calibration, or broad speech coverage. The current corpus contains mixed presidential documents, not a reviewed speech-only set. The n-gram CLI evaluator is separately minimal: it trains on all but the final record and scores that record. Both are prototype checks, not complete research protocols.
 
-## Question-conditioned responses
+## Question-anchored response prediction
 
 - Keep this task distinct from ordinary continuation and before-speech forecasting.
-- Use only explicit question-to-president links from the paragraph segmenter; treat them as noisy candidates until manually reviewed.
-- Split by whole calendar dates before creating examples. Keep each response and its preceding transcript context in the same speech split.
-- Report matched-target metrics for combined transcript+question, transcript-only, and question-only conditions.
-- If dated evidence is trained, also compare combined inputs with and without evidence; keep those results distinct from question-only results.
-- Use external evidence only when each item has a source and publication date strictly earlier than the question's transcript date. Same-day evidence is excluded because the corpus has no event timestamps. Do not attach evidence by topic after seeing the response.
-- Report evidence-conditioned results separately from question-only results. Evaluate factual support and source attribution separately; the current decoder does not emit citations. The current Federal Register sample is not paired to Q&A and cannot support an evidence-conditioned claim.
+- Use source timecodes and speaker labels. Curate the question-to-response alignment; do not assume the next span answers the question.
+- Split by whole events before building examples. At each prediction point, include only spans that have ended by that time; update event state only after a span becomes observable.
+- Evaluate response routing separately for target-speaker response, another speaker's response, no response, or uncertain alignment, using status accuracy and macro-F1.
+- Evaluate semantic idea labels with multi-label precision/recall/F1 only when human-reviewed labels exist. Do not treat StressLens, topic, entity, or moderation annotations as gold idea labels.
+- Evaluate exact wording separately with word error rate, exact word-sequence match (case-insensitive, punctuation excluded), and exact text match (case-insensitive, whitespace-normalized, punctuation-sensitive) on linked target-speaker spans.
+- Report idea-label and wording metrics separately. Neither is a substitute for the other.
+- Same-day external evidence is excluded when the event has no timestamp finer than a date. Assess factual support and source attribution separately; the current decoder does not emit citations.
 
 ## Pre-speech forecasting
 
@@ -30,4 +31,4 @@ The initial target is occurrence of recurring two-to-four-word phrases in the ne
 - Add topic labels or event context only after specifying how they are sourced and annotated.
 - Document source, permission, and transcription uncertainty.
 
-Keep the two task results separate. A continuation score is not evidence that the system can forecast a speech before it begins.
+Keep all three task results separate. Continuation scores do not establish pre-speech forecasting or question-anchored response quality.

@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,8 +20,11 @@ class NGramModelTests(unittest.TestCase):
         model = NGramModel.train(["the people win", "the people work"], order=3)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "model.json"
-            model.save(path)
+            model.save(path, metadata={"model_version": "fixture-v1"})
             loaded = NGramModel.load(path)
+            self.assertEqual(json.loads(path.read_text())["model_version"]["model_version"], "fixture-v1")
+            with self.assertRaisesRegex(FileExistsError, "versioned path"):
+                model.save(path)
         self.assertEqual(model.predict("the people"), loaded.predict("the people"))
 
     def test_evaluation_holds_out_last_speech(self):

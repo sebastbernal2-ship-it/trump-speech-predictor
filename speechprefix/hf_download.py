@@ -27,6 +27,7 @@ def download_snapshot(
     retries: int = 3,
     timeout_seconds: int = 20,
     allow_patterns: list[str] | None = None,
+    revision: str | None = None,
 ) -> str:
     """Download with visible progress, per-request timeouts, and bounded retry/resume."""
     if retries < 1 or timeout_seconds < 1:
@@ -41,16 +42,19 @@ def download_snapshot(
     enable_progress_bars()
     for attempt in range(1, retries + 1):
         try:
-            return snapshot_download(
-                repo_id=model_id,
-                max_workers=1,
-                etag_timeout=timeout_seconds,
-                allow_patterns=allow_patterns or [
+            options = {
+                "repo_id": model_id,
+                "max_workers": 1,
+                "etag_timeout": timeout_seconds,
+                "allow_patterns": allow_patterns or [
                     "*.safetensors", "config.json", "generation_config.json",
                     "tokenizer.json", "tokenizer_config.json", "special_tokens_map.json",
                     "added_tokens.json", "vocab.json", "merges.txt", "*.model",
                 ],
-            )
+            }
+            if revision is not None:
+                options["revision"] = revision
+            return snapshot_download(**options)
         except Exception as error:
             if not _is_transient(error) or attempt == retries:
                 raise RuntimeError(

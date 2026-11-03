@@ -1,3 +1,4 @@
+import hashlib
 import json
 import tempfile
 import unittest
@@ -31,6 +32,7 @@ class HybridTrainingTests(unittest.TestCase):
             ]
             source.write_text("".join(json.dumps(record) + "\n" for record in records))
             checkpoint = root / "speechplan.pt"
+            registry = root / "registry.jsonl"
             question = next(
                 segment for segment in segment_record(records[0])
                 if segment["segment_type"] == "question"
@@ -49,9 +51,15 @@ class HybridTrainingTests(unittest.TestCase):
                 min_frequency=1, max_vocabulary=64, width=32, layers=2,
                 heads=4, codebook_size=8, context_length=8, target_length=8,
                 question_length=8, evidence_length=8, evidence_pairs_path=evidence_path,
-                device_name="cpu",
+                device_name="cpu", registry_path=registry,
             )
             self.assertTrue(checkpoint.is_file())
+            self.assertTrue(registry.is_file())
+            self.assertIn("speechplan-h/format-2/", result["model_version"])
+            registered = json.loads(registry.read_text(encoding="utf-8").strip())
+            self.assertEqual(registered["model_version"], result["model_version"])
+            self.assertEqual(len(registered["artifact"]["sha256"]), 64)
+            self.assertEqual(registered["dataset"]["sha256"], hashlib.sha256(source.read_bytes()).hexdigest())
             self.assertEqual(
                 set(result["test_qa"]), {
                     "combined", "combined_without_evidence", "transcript_only", "question_only"
@@ -109,6 +117,8 @@ class HybridTrainingTests(unittest.TestCase):
             torch.save(legacy, legacy_path)
             old_model, _, _, _ = load_hybrid(legacy_path, "cpu")
             self.assertFalse(old_model.question_channel_enabled)
+            with self.assertRaisesRegex(FileExistsError, "versioned path"):
+                train_hybrid(source, checkpoint, registry_path=registry)
 
 
 

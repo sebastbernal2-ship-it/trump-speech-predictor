@@ -27,6 +27,7 @@ def main(argv: list[str] | None = None) -> int:
     train.add_argument("--input", required=True)
     train.add_argument("--output", required=True)
     train.add_argument("--order", type=int, default=5)
+    train.add_argument("--registry", default="models/registry.jsonl")
 
     predict = sub.add_parser("predict", help="rank next words from a prefix")
     predict.add_argument("--model", required=True)
@@ -54,9 +55,43 @@ def main(argv: list[str] | None = None) -> int:
     audit = sub.add_parser("audit", help="summarize imported record types without reading transcript bodies")
     audit.add_argument("--input", required=True, help="JSONL speech records")
 
-    segment = sub.add_parser("segment", help="split transcripts and classify explicit speaker turns")
+    segment = sub.add_parser("segment", help="split legacy paragraph transcripts and classify explicit speaker turns")
     segment.add_argument("--input", default="data/speeches.jsonl")
     segment.add_argument("--output", default="data/segments.jsonl")
+
+    turn_import = sub.add_parser("turn-import", help="import a time-coded transcript page and its event metadata")
+    turn_import.add_argument("--transcript", required=True, help="saved page text with a Full Transcript section")
+    turn_import.add_argument("--metadata", required=True, help="JSON event metadata and optional reviewed prediction annotations")
+    turn_import.add_argument("--output", default="data/events.jsonl")
+
+    rollcall_import = sub.add_parser(
+        "import-rollcall", help="import permitted Roll Call Factba.se timestamped transcripts"
+    )
+    rollcall_import.add_argument("--output", default="data/rollcall-events.jsonl")
+    rollcall_import.add_argument("--limit", type=int, default=0, help="maximum source records; 0 imports all")
+    rollcall_import.add_argument("--delay", type=float, default=0.15, help="seconds between requests")
+    rollcall_import.add_argument("--timeout", type=int, default=30)
+    rollcall_import.add_argument("--start-date", help="optional earliest event date, YYYY-MM-DD")
+    rollcall_import.add_argument("--end-date", help="optional latest event date, YYYY-MM-DD")
+    rollcall_import.add_argument(
+        "--reuse-terms",
+        default="User-reported permission for bulk retrieval and ML use; grant details are not stored here.",
+        help="permission or license note stored with every event",
+    )
+
+    rollcall_split = sub.add_parser(
+        "split-rollcall", help="make disjoint Trump/Q&A/speech task files from the Roll Call event corpus"
+    )
+    rollcall_split.add_argument("--input", default="data/rollcall-events.jsonl")
+    rollcall_split.add_argument("--output-dir", default="data/rollcall-by-type")
+
+    speech_prepare = sub.add_parser(
+        "prepare-rollcall-speeches", help="export long Trump-only speech text for continuation training"
+    )
+    speech_prepare.add_argument("--input", default="data/rollcall-by-type/trump-speech-candidates.jsonl")
+    speech_prepare.add_argument("--output", default="data/rollcall-by-type/trump-long-speeches.jsonl")
+    speech_prepare.add_argument("--min-target-words", type=int, default=1000)
+    speech_prepare.add_argument("--min-target-share", type=float, default=0.8)
 
     context = sub.add_parser("context-fetch", help="fetch time-bounded Federal Register context (no API key)")
     context.add_argument("--as-of", required=True, help="prediction date; same-day records are excluded, YYYY-MM-DD")
@@ -67,6 +102,7 @@ def main(argv: list[str] | None = None) -> int:
 
     llm = sub.add_parser("llm", help="run a Hugging Face causal-LM continuation baseline")
     llm.add_argument("--model", default="openai-community/gpt2")
+    llm.add_argument("--revision", help="Hugging Face model commit; the default GPT-2 revision is pinned")
     llm.add_argument("--prefix", required=True)
     llm.add_argument("--candidates", type=int, default=8)
     llm.add_argument("--tokens", type=int, default=32)
@@ -81,6 +117,7 @@ def main(argv: list[str] | None = None) -> int:
     hybrid_train = sub.add_parser("hybrid-train", help="train the from-scratch SpeechPlan-H model on local records")
     hybrid_train.add_argument("--input", required=True)
     hybrid_train.add_argument("--output", default="checkpoints/speechplan-h.pt")
+    hybrid_train.add_argument("--registry", default="models/registry.jsonl")
     hybrid_train.add_argument("--epochs", type=int, default=1)
     hybrid_train.add_argument("--batch-size", type=int, default=32)
     hybrid_train.add_argument("--stride", type=int, default=32)
@@ -99,6 +136,7 @@ def main(argv: list[str] | None = None) -> int:
 
     pretrained = sub.add_parser("pretrained-hybrid", help="run the separate GPT-2/NCM candidate-fusion baseline")
     pretrained.add_argument("--prefix", required=True)
+    pretrained.add_argument("--llm-revision", help="optional Hugging Face commit for a non-default LLM")
     pretrained.add_argument("--llm-candidates", type=int, default=4)
     pretrained.add_argument("--ncm-candidates", type=int, default=4)
     pretrained.add_argument("--llm-weight", type=float, default=0.5, help="provisional; fit on validation data")
@@ -109,9 +147,22 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "train":
-            model = NGramModel.train(load_speeches(args.input), order=args.order)
-            model.save(args.output)
-            print(f"Saved order-{model.order} model to {args.output}")
+            from .model_versions import assert_new_model_artifact, create_model_version, register_model_version
+
+            assert_new_model_artifact(args.output, args.registry)
+            speeches = load_speeches(args.input)
+            model = NGramModel.train(speeches, order=args.order)
+            version = create_model_version(
+                model_family="word-ngram",
+                architecture="format-1",
+                task="continuation",
+                dataset_path=args.input,
+                config={"order": model.order, "vocabulary_size": len(model.vocabulary)},
+                training={"training_records": len(speeches)},
+            )
+            model.save(args.output, metadata=version)
+            register_model_version(args.output, version, args.registry)
+            print(f"Saved order-{model.order} model version {version['model_version']} to {args.output}")
         elif args.command == "predict":
             for word, probability in NGramModel.load(args.model).predict(args.prefix, args.top):
                 print(f"{word}\t{probability:.4f}")
@@ -170,6 +221,54 @@ def main(argv: list[str] | None = None) -> int:
                     stream.write(json.dumps(segment_record, ensure_ascii=False) + "\n")
             print(f"Wrote {sum(counts.values())} segments from {len(records)} records to {output}.")
             print(f"segment_types: {dict(sorted(counts.items()))}")
+        elif args.command == "turn-import":
+            import json
+            from .events import add_prediction_examples, append_event, parse_timestamped_transcript
+
+            metadata = json.loads(Path(args.metadata).read_text(encoding="utf-8"))
+            event = parse_timestamped_transcript(
+                Path(args.transcript).read_text(encoding="utf-8"), metadata
+            )
+            annotations = metadata.get("prediction_annotations", [])
+            event = add_prediction_examples(event, annotations)
+            append_event(args.output, event)
+            print(f"Appended {len(event['turns'])} timestamped turns for {event['event_id']} to {args.output}.")
+        elif args.command == "import-rollcall":
+            from .rollcall import collect_rollcall
+
+            def progress(stats):
+                print(
+                    f"Processed {stats['records_seen']} records; fetched {stats['pages_fetched']} pages; "
+                    f"added {stats['events_added']} events.",
+                    file=sys.stderr,
+                )
+
+            result = collect_rollcall(
+                args.output,
+                limit=args.limit,
+                delay=args.delay,
+                timeout=args.timeout,
+                start_date=args.start_date,
+                end_date=args.end_date,
+                reuse_terms=args.reuse_terms,
+                progress=progress,
+            )
+            print(f"Roll Call import complete: {result}")
+        elif args.command == "split-rollcall":
+            from .rollcall_split import split_rollcall_events
+
+            result = split_rollcall_events(args.input, args.output_dir)
+            print(f"Roll Call task split complete: {result}")
+        elif args.command == "prepare-rollcall-speeches":
+            from .rollcall_split import extract_long_speech_records
+
+            result = extract_long_speech_records(
+                args.input,
+                args.output,
+                min_target_words=args.min_target_words,
+                min_target_share=args.min_target_share,
+            )
+            print(f"Long Trump speech export complete: {result}")
         elif args.command == "context-fetch":
             from .federalregister import append_context, search_documents
 
@@ -180,7 +279,11 @@ def main(argv: list[str] | None = None) -> int:
             from .hybrid import combine_candidate_mass
             from .llm import CausalLM
 
-            model = CausalLM(args.model, download_retries=args.download_retries, download_timeout=args.download_timeout)
+            model = CausalLM(
+                args.model, download_retries=args.download_retries,
+                download_timeout=args.download_timeout, revision=args.revision,
+            )
+            print(f"Model version: {model.model_id}@{model.model_revision or 'local'}")
             print("Top next-token pieces (probability in the full vocabulary):")
             for piece, probability in model.next_tokens(args.prefix, top=10):
                 print(f"{piece!r}\t{probability:.5f}")
@@ -206,8 +309,9 @@ def main(argv: list[str] | None = None) -> int:
                 device_name=args.device,
                 max_steps=args.max_steps,
                 evidence_pairs_path=args.evidence_pairs,
+                registry_path=args.registry,
             )
-            print(f"Saved SpeechPlan-H checkpoint: {result['output']}")
+            print(f"Saved SpeechPlan-H version {result['model_version']}: {result['output']}")
         elif args.command == "hybrid":
             from .hybrid_train import generate_hybrid
 
@@ -230,9 +334,17 @@ def main(argv: list[str] | None = None) -> int:
             from .llm import CausalLM
             from .ncm import NCMGenerator
 
-            llm = CausalLM(download_retries=args.download_retries, download_timeout=args.download_timeout)
+            llm = CausalLM(
+                download_retries=args.download_retries,
+                download_timeout=args.download_timeout,
+                revision=args.llm_revision,
+            )
             ncm = NCMGenerator(download_retries=args.download_retries, download_timeout=args.download_timeout)
             model = LLMNCMHybrid(llm, ncm)
+            print(
+                f"Model versions: LLM={llm.model_id}@{llm.model_revision or 'local'}; "
+                f"NCM={ncm.checkpoint_revision}; tokenizer={ncm.tokenizer_revision}"
+            )
             candidates, mass = model.predict(
                 args.prefix,
                 llm_count=args.llm_candidates,
