@@ -131,6 +131,15 @@ def main(argv: list[str] | None = None) -> int:
     context_candidates.add_argument("--input", required=True, help="JSON context map or JSONL snapshot file")
     context_candidates.add_argument("--event-id", help="select an event from a multi-event JSONL input")
 
+    context_idea_eval = sub.add_parser(
+        "context-idea-evaluate", help="compare context-derived issue phrases with a chronological speaker-history baseline"
+    )
+    context_idea_eval.add_argument("--snapshots", default="data/rollcall-context-snapshots-v1.jsonl")
+    context_idea_eval.add_argument("--events", default="data/rollcall-by-type/trump-speech-candidates.jsonl")
+    context_idea_eval.add_argument("--output", default="data/rollcall-context-idea-evaluation-v1.json")
+    context_idea_eval.add_argument("--train-fraction", type=float, default=0.8)
+    context_idea_eval.add_argument("--validation-fraction", type=float, default=0.1)
+
     context_candidate_eval = sub.add_parser(
         "context-candidate-evaluate", help="evaluate source-derived issue candidates against weak theme labels"
     )
@@ -446,16 +455,30 @@ def main(argv: list[str] | None = None) -> int:
                 event_ideas.append({
                     "event_id": event["event_id"],
                     "date": event["event_date"],
+                    "retrieval_profile": event["retrieval_profile"],
+                    "context_retrieved_at": event["context_retrieved_at"],
+                    "retrieval_queries": event["retrieval_queries"],
                     "transcript_derived_ideas": [
                         {"idea": idea["candidate_idea"], "occurrences": idea["occurrence_count"],
                          "turn_ids": idea["supporting_turn_ids"],
-                         "headline_support": [source["title"] for source in idea["context_matches"]]}
+                         "headline_support": [
+                             {"title": source["title"], "publisher": source["publisher"],
+                              "published_at": source["published_at"], "url": source["url"],
+                              "query_purposes": source["query_purposes"]}
+                             for source in idea["context_matches"][:3]
+                         ]}
                         for idea in event["transcript_top_ideas"][:10]
                     ],
                     "headline_derived_candidates": [
                         {"idea": idea["candidate_idea"], "source_count": idea["source_count"],
                          "mentioned_by_target": idea["mentioned_by_target"],
-                         "transcript_turn_ids": [match["turn_id"] for match in idea["transcript_matches"]]}
+                         "transcript_turn_ids": [match["turn_id"] for match in idea["transcript_matches"]],
+                         "supporting_sources": [
+                             {"title": source["title"], "publisher": source["publisher"],
+                              "published_at": source["published_at"], "url": source["url"],
+                              "query_purposes": source["query_purposes"]}
+                             for source in idea["supporting_sources"][:3]
+                         ]}
                         for idea in event["top_ideas"][:10]
                     ],
                 })
@@ -475,6 +498,20 @@ def main(argv: list[str] | None = None) -> int:
                 "event_date": record["event_date"],
                 "candidate_policy": "heuristic source-derived topics; evidence scores are not probabilities",
                 "candidates": extract_context_candidates(record["sources"], record["event_date"]),
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "context-idea-evaluate":
+            import json
+            from .context_idea_evaluation import evaluate_context_idea_candidates
+
+            result = evaluate_context_idea_candidates(
+                args.snapshots, args.events, output_path=args.output,
+                train_fraction=args.train_fraction, validation_fraction=args.validation_fraction,
+            )
+            print(json.dumps({
+                "output": args.output,
+                "split": result["split"],
+                "test_metrics": result["test_metrics"],
+                "limitations": result["limitations"],
             }, ensure_ascii=False, indent=2))
         elif args.command == "context-candidate-evaluate":
             import json
