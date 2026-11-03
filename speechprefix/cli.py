@@ -131,6 +131,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     context_snapshot_validate.add_argument("--input", required=True, help="prospective snapshot JSON")
 
+    theme_review = sub.add_parser(
+        "theme-review-packet", help="generate two blinded, transcript-only theme annotation packets"
+    )
+    theme_review.add_argument("--snapshots", default="data/rollcall-context-snapshots-v1.jsonl")
+    theme_review.add_argument("--events", default="data/rollcall-by-type/trump-speech-candidates.jsonl")
+    theme_review.add_argument("--taxonomy", default="data/rollcall-theme-family-drafts-v1.jsonl")
+    theme_review.add_argument("--annotator-a", default="data/rollcall-theme-review-annotator-a-v1.jsonl")
+    theme_review.add_argument("--annotator-b", default="data/rollcall-theme-review-annotator-b-v1.jsonl")
+    theme_review.add_argument("--key", default="data/rollcall-theme-review-key-v1.json")
+    theme_review.add_argument("--seed", type=int, default=17)
+
     llm = sub.add_parser("llm", help="run a Hugging Face causal-LM continuation baseline")
     llm.add_argument("--model", default="openai-community/gpt2")
     llm.add_argument("--revision", help="Hugging Face model commit; the default GPT-2 revision is pinned")
@@ -411,6 +422,23 @@ def main(argv: list[str] | None = None) -> int:
             except json.JSONDecodeError as exc:
                 raise ValueError(f"invalid snapshot JSON: {exc}") from None
             print(json.dumps(validate_prospective_snapshot(snapshot), ensure_ascii=False, indent=2))
+        elif args.command == "theme-review-packet":
+            import json
+            from .theme_review import generate_theme_review_packets
+
+            result = generate_theme_review_packets(
+                args.snapshots, args.events, args.taxonomy,
+                annotator_a_path=args.annotator_a, annotator_b_path=args.annotator_b,
+                key_path=args.key, seed=args.seed,
+            )
+            print(json.dumps({
+                "item_count": result["item_count"],
+                "family_count": result["family_count"],
+                "annotator_a": args.annotator_a,
+                "annotator_b": args.annotator_b,
+                "hidden_key": args.key,
+                "limitations": "pilot packets only; annotations require independent human review and adjudication",
+            }, ensure_ascii=False, indent=2))
         elif args.command == "llm":
             from .hybrid import combine_candidate_mass
             from .llm import CausalLM
