@@ -74,6 +74,8 @@ class ExplicitPlanTests(unittest.TestCase):
         self.assertEqual(
             tokenize(second["target"]["text"])[0], "__theme__"
         )
+        truncated = plan_path_examples(event, fixture_plan("event-1"), max_context_tokens=2)
+        self.assertEqual(len(tokenize(truncated[1]["prefix_text"])), 2)
 
     def test_draft_annotations_cannot_become_model_training_examples(self):
         event = fixture_event("event-1", "2020-01-01")
@@ -130,10 +132,48 @@ class ExplicitPlanTests(unittest.TestCase):
             self.assertIn("speechplan-explicit/plan-path-v1/", result["model_version"])
             registered = json.loads(registry.read_text(encoding="utf-8"))
             self.assertEqual(registered["model_version"], result["model_version"])
-            self.assertEqual(registered["training"]["label_policy"], "reviewed plans only")
+            self.assertEqual(registered["training"]["label_policy"], "reviewed")
             self.assertGreaterEqual(registered["metrics"]["test"]["examples"], 1)
             with self.assertRaisesRegex(FileExistsError, "versioned path"):
                 train_explicit_plan_model(events_path, plans_path, output, registry_path=registry)
+
+    def test_trains_separate_weak_label_version_from_real_transcript_fixture(self):
+        from speechprefix.weak_plan_labels import create_weak_plan_labels
+
+        torch.set_num_threads(1)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            events = [fixture_event(f"event-{day}", f"2020-01-0{day}") for day in (1, 2, 3)]
+            events_path = root / "events.jsonl"
+            events_path.write_text("".join(json.dumps(event) + "\n" for event in events), encoding="utf-8")
+            records_path = root / "speeches.jsonl"
+            records_path.write_text("".join(json.dumps({
+                "speech_id": event["event_id"], "date": event["event_date"],
+            }) + "\n" for event in events), encoding="utf-8")
+            plans_path = root / "weak-plans.jsonl"
+            create_weak_plan_labels(
+                events_path, records_path, plans_path, section_turns=2, point_turns=1,
+            )
+            plans = [json.loads(line) for line in plans_path.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(plans[0]["review_status"], "draft")
+            self.assertEqual(plans[0]["weak_label_config"]["idf_training_date_range"], ["2020-01-01", "2020-01-01"])
+            self.assertEqual(len(plan_path_examples(events[0], plans[0], label_policy="weak-extractive")), 2)
+            with self.assertRaisesRegex(ValueError, "only reviewed"):
+                plan_path_examples(events[0], plans[0])
+            output = root / "weak-plan.pt"
+            result = train_explicit_plan_model(
+                events_path, plans_path, output, registry_path=root / "registry.jsonl",
+                epochs=1, batch_size=2, context_length=16, plan_length=24,
+                width=16, layers=1, heads=2, min_frequency=1,
+                max_vocabulary=64, device_name="cpu", label_policy="weak-extractive",
+            )
+            registered = json.loads((root / "registry.jsonl").read_text(encoding="utf-8"))
+            from speechprefix.model_versions import sha256_file
+
+            self.assertEqual(registered["training"]["label_policy"], "weak-extractive")
+            self.assertEqual(registered["additional_data"]["sha256"], sha256_file(plans_path))
+            self.assertTrue(output.is_file())
+            self.assertEqual(result["model_version"], registered["model_version"])
 
     def test_parser_reads_ordered_hierarchy_and_rejects_malformed_paths(self):
         self.assertEqual(

@@ -1,12 +1,15 @@
-"""Validation for human-reviewed speech theme/section/talking-point plans."""
+"""Validation and causal examples for hierarchical speech-plan paths."""
 
 from __future__ import annotations
 
 
 PLAN_MARKERS = ("__plan__", "__theme__", "__section__", "__point__", "__endplan__")
+WEAK_PLAN_ANNOTATION_SOURCE = "factbase-topic-extractive-keyphrase-hierarchy-v3"
 
 
-def validate_speech_plan(plan: dict, event: dict, *, require_reviewed: bool = False) -> None:
+def validate_speech_plan(
+    plan: dict, event: dict, *, require_reviewed: bool = False, require_complete: bool = False,
+) -> None:
     """Validate plan provenance, hierarchy, and target-speaker span references."""
     if not isinstance(plan, dict) or type(plan.get("schema_version")) is not int:
         raise ValueError("speech plan must be an object with an integer schema_version")
@@ -31,7 +34,7 @@ def validate_speech_plan(plan: dict, event: dict, *, require_reviewed: bool = Fa
     if len(by_id) != len(turns) or None in by_id:
         raise ValueError("source event turn IDs must be present and unique")
     positions = {turn_id: index for index, turn_id in enumerate(by_id)}
-    reviewed = status == "reviewed" or require_reviewed
+    complete = status == "reviewed" or require_complete
     ids: set[str] = set()
 
     def check_node(node: dict, path: str, child_key: str | None) -> set[str]:
@@ -42,15 +45,15 @@ def validate_speech_plan(plan: dict, event: dict, *, require_reviewed: bool = Fa
         if not isinstance(node_id, str) or not node_id.strip() or node_id in ids:
             raise ValueError(f"{path}.id must be a unique nonempty string")
         ids.add(node_id)
-        if not isinstance(summary, str) or (reviewed and not summary.strip()):
-            raise ValueError(f"{path}.summary must be nonempty for reviewed plans")
+        if not isinstance(summary, str) or (complete and not summary.strip()):
+            raise ValueError(f"{path}.summary must be nonempty for complete plans")
         turn_ids = node.get("turn_ids")
         if not isinstance(turn_ids, list) or any(not isinstance(turn_id, str) for turn_id in turn_ids):
             raise ValueError(f"{path}.turn_ids must be a list of turn IDs")
         if len(set(turn_ids)) != len(turn_ids):
             raise ValueError(f"{path}.turn_ids must not contain duplicates")
-        if reviewed and not turn_ids:
-            raise ValueError(f"{path}.turn_ids must ground reviewed plan nodes in the transcript")
+        if complete and not turn_ids:
+            raise ValueError(f"{path}.turn_ids must ground plan nodes in the transcript")
         if any(turn_id not in by_id for turn_id in turn_ids):
             raise ValueError(f"{path}.turn_ids reference an unknown source turn")
         if any(by_id[turn_id].get("speaker_role") != "target_speaker" for turn_id in turn_ids):
@@ -62,8 +65,8 @@ def validate_speech_plan(plan: dict, event: dict, *, require_reviewed: bool = Fa
         children = node.get(child_key, []) if child_key is not None else []
         if not isinstance(children, list):
             raise ValueError(f"{path}.{child_key} must be a list")
-        if reviewed and child_key and not children:
-            raise ValueError(f"{path}.{child_key} cannot be empty in a reviewed plan")
+        if complete and child_key and not children:
+            raise ValueError(f"{path}.{child_key} cannot be empty in a complete plan")
         child_turns = set()
         child_starts = []
         for index, child in enumerate(children):
@@ -80,8 +83,8 @@ def validate_speech_plan(plan: dict, event: dict, *, require_reviewed: bool = Fa
     themes = plan.get("themes")
     if not isinstance(themes, list):
         raise ValueError("speech plan themes must be a list")
-    if reviewed and not themes:
-        raise ValueError("reviewed speech plans require at least one theme")
+    if complete and not themes:
+        raise ValueError("complete speech plans require at least one theme")
     theme_starts = []
     for index, theme in enumerate(themes):
         covered = check_node(theme, f"themes[{index}]", "sections")
@@ -95,9 +98,24 @@ def serialize_plan_path(theme: str, section: str, point: str) -> str:
     return f"__theme__ {theme} __section__ {section} __point__ {point} __endplan__"
 
 
-def plan_path_examples(event: dict, plan: dict) -> list[dict]:
-    """Make causal prefix-to-next-point examples from a reviewed plan tree."""
-    validate_speech_plan(plan, event, require_reviewed=True)
+def plan_path_examples(
+    event: dict, plan: dict, *, max_context_tokens: int | None = None,
+    label_policy: str = "reviewed",
+) -> list[dict]:
+    """Make causal examples from reviewed plans or the named extractive weak-label policy."""
+    if max_context_tokens is not None and max_context_tokens < 1:
+        raise ValueError("max_context_tokens must be positive")
+    if label_policy == "reviewed":
+        validate_speech_plan(plan, event, require_reviewed=True)
+    elif label_policy == "weak-extractive":
+        if (
+            plan.get("review_status") != "draft"
+            or plan.get("annotation_source") != WEAK_PLAN_ANNOTATION_SOURCE
+        ):
+            raise ValueError("weak-extractive training requires draft labels from the extractive labeler")
+        validate_speech_plan(plan, event, require_complete=True)
+    else:
+        raise ValueError(f"unknown plan label policy: {label_policy}")
     if event.get("timestamp_anomalies") or any(not turn.get("timestamp_valid", True) for turn in event["turns"]):
         raise ValueError("plan examples require timestamp-valid source events")
     turns = event["turns"]
@@ -127,6 +145,10 @@ def plan_path_examples(event: dict, plan: dict) -> list[dict]:
                     f"{turn.get('speaker_name', '')}: {turn.get('text', '')}".strip()
                     for turn in visible if turn.get("text", "").strip()
                 )
+                if max_context_tokens is not None:
+                    from .model import tokenize
+
+                    prefix_text = " ".join(tokenize(prefix_text)[-max_context_tokens:])
                 example_id = f"{event['event_id']}:{point['id']}"
                 examples.append({
                     "event_id": event["event_id"],

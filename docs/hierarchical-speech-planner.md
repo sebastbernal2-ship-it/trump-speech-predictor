@@ -72,8 +72,11 @@ Only `review_status: "reviewed"` plans with a reviewer and valid target-speaker 
 
 Evaluate theme, section, and talking-point prediction separately from exact wording. Split by whole event dates. For in-speech predictions, compare only plan nodes grounded in transcript spans that occur after the prediction point; do not expose those nodes or their text in the input. Keep this task separate from pre-speech forecasts and question-anchored response prediction.
 
-## First explicit model version
+## Explicit path model and label policies
 
-`explicit-plan-train` trains a separate, from-scratch causal language model that predicts one structured theme → section → talking-point path from the observed transcript prefix. It accepts only `review_status: "reviewed"` plans, splits by whole event dates, and keeps each target point's cited transcript turns out of its input. Its test metrics are token loss, teacher-forced token accuracy, and exact generated-path match; exact text match is not semantic idea accuracy.
+`explicit-plan-train` trains a separate, from-scratch causal model that predicts one theme → section → talking-point path from an observed prefix. It supports two deliberately separate label policies:
 
-This first model predicts the plan path only. It does not generate surface wording or condition SpeechPlan-H's word decoder. The Roll Call review batch currently contains one assistant-drafted, unreviewed outline and no reviewed plan set, so a real-corpus training run is not yet valid. Synthetic fixtures exercise the training path but do not count as model results. Every eventual run is registered separately; see `docs/model-versioning.md`.
+- `reviewed` accepts only human-reviewed plans and is the route to semantic-plan evaluation.
+- `weak-extractive` accepts only plans marked as drafts by the named labeler. It uses the highest-score Factba.se/IPTC source topic as the theme when present (otherwise whole-event keywords), fixed 15-target-turn keyword windows for sections, and fixed 3-turn keyword windows for talking points. IDF weights are computed only from the chronological training-date partition. These are real-transcript/source-metadata pseudo-labels, not human review or verified ideas; their scores measure reproduction of the labeling heuristic.
+
+Both policies split by whole event dates and exclude the target point's supporting turns from its transcript input. Test metrics include token loss, teacher-forced token accuracy, and greedy exact-path match. Exact text match is not semantic idea accuracy. The model predicts the path only; it does not generate surface wording or condition SpeechPlan-H's decoder. Every run records its label policy, data hashes, and metrics; see `docs/model-versioning.md`.

@@ -1,4 +1,4 @@
-"""From-scratch causal predictor for reviewed theme/section/talking-point paths."""
+"""From-scratch causal predictor for structured theme/section/talking-point paths."""
 
 from __future__ import annotations
 
@@ -18,7 +18,9 @@ from transformers import GPT2Config, GPT2LMHeadModel
 from .hybrid_train import BOS_ID, EOS_ID, PAD_ID, UNK_ID, build_vocabulary
 from .model import tokenize
 from .model_versions import DEFAULT_REGISTRY, assert_new_model_artifact, create_model_version, register_model_version
-from .speech_plans import PLAN_MARKERS, plan_path_examples, validate_speech_plan
+from .speech_plans import (
+    PLAN_MARKERS, WEAK_PLAN_ANNOTATION_SOURCE, plan_path_examples, validate_speech_plan,
+)
 
 
 @dataclass(frozen=True)
@@ -47,7 +49,7 @@ class ExplicitPlanConfig:
 
 
 class ExplicitPlanPathModel(nn.Module):
-    """Predict a structured semantic path from the observed transcript prefix."""
+    """Predict a structured plan path from the observed transcript prefix."""
 
     def __init__(self, config: ExplicitPlanConfig):
         super().__init__()
@@ -112,7 +114,9 @@ class ExplicitPlanPathModel(nn.Module):
             self.train(was_training)
 
 
-def _event_records(events_path: str | Path, plans_path: str | Path) -> list[tuple[dict, dict]]:
+def _event_records(
+    events_path: str | Path, plans_path: str | Path, label_policy: str,
+) -> list[tuple[dict, dict]]:
     plans = {}
     with Path(plans_path).open(encoding="utf-8") as stream:
         for line_number, line in enumerate(stream, start=1):
@@ -124,7 +128,7 @@ def _event_records(events_path: str | Path, plans_path: str | Path) -> list[tupl
                 raise ValueError(f"plan event IDs must be present and unique (line {line_number})")
             plans[event_id] = plan
     if not plans:
-        raise ValueError("no reviewed speech plans were supplied")
+        raise ValueError("no speech plan labels were supplied")
 
     events = {}
     with Path(events_path).open(encoding="utf-8") as stream:
@@ -141,7 +145,17 @@ def _event_records(events_path: str | Path, plans_path: str | Path) -> list[tupl
     records = []
     for event_id, plan in plans.items():
         event = events[event_id]
-        validate_speech_plan(plan, event, require_reviewed=True)
+        if label_policy == "reviewed":
+            validate_speech_plan(plan, event, require_reviewed=True)
+        elif label_policy == "weak-extractive":
+            if (
+                plan.get("review_status") != "draft"
+                or plan.get("annotation_source") != WEAK_PLAN_ANNOTATION_SOURCE
+            ):
+                raise ValueError("weak-extractive training requires draft labels from the extractive labeler")
+            validate_speech_plan(plan, event, require_complete=True)
+        else:
+            raise ValueError(f"unknown plan label policy: {label_policy}")
         if not isinstance(event.get("event_date"), str):
             raise ValueError(f"source event has no date: {event_id}")
         records.append((event, plan))
@@ -164,8 +178,15 @@ def _chronological_split(records: list[tuple[dict, dict]]):
     )
 
 
-def _flatten_examples(records: Sequence[tuple[dict, dict]]) -> list[dict]:
-    return [example for event, plan in records for example in plan_path_examples(event, plan)]
+def _flatten_examples(
+    records: Sequence[tuple[dict, dict]], context_length: int, label_policy: str,
+) -> list[dict]:
+    return [
+        example for event, plan in records
+        for example in plan_path_examples(
+            event, plan, max_context_tokens=context_length, label_policy=label_policy,
+        )
+    ]
 
 
 def _encode_text(text: str, lookup: dict[str, int], length: int) -> list[int]:
@@ -188,7 +209,9 @@ def _tensor_data(examples: Sequence[dict], vocabulary: list[str], config: Explic
     return TensorDataset(torch.tensor(contexts, dtype=torch.long), torch.tensor(plans, dtype=torch.long))
 
 
-def _evaluate(model: ExplicitPlanPathModel, loader: DataLoader, device: torch.device) -> dict:
+def _evaluate(
+    model: ExplicitPlanPathModel, loader: DataLoader, device: torch.device, *, greedy_paths: bool = True,
+) -> dict:
     model.eval()
     total_loss = 0.0
     correct_tokens = 0
@@ -206,15 +229,18 @@ def _evaluate(model: ExplicitPlanPathModel, loader: DataLoader, device: torch.de
             correct_tokens += int(((result["logits"].argmax(dim=-1) == targets) & valid).sum())
             tokens += token_count
             examples += count
-            for context, target in zip(contexts, targets):
-                predicted = model.generate(context.unsqueeze(0))
-                expected = target.tolist()
-                expected = expected[:expected.index(model.config.end_plan_id) + 1] if model.config.end_plan_id in expected else expected
-                exact += predicted == expected
+            if greedy_paths:
+                for context, target in zip(contexts, targets):
+                    expected = target.tolist()
+                    expected = expected[:expected.index(model.config.end_plan_id) + 1] if model.config.end_plan_id in expected else expected
+                    predicted = model.generate(
+                        context.unsqueeze(0), max_new_tokens=len(expected),
+                    )
+                    exact += predicted == expected
     return {
         "loss": total_loss / max(tokens, 1),
         "teacher_forced_token_accuracy": correct_tokens / max(tokens, 1),
-        "greedy_exact_path_accuracy": exact / max(examples, 1),
+        "greedy_exact_path_accuracy": exact / max(examples, 1) if greedy_paths else None,
         "examples": examples,
         "tokens": tokens,
     }
@@ -238,16 +264,22 @@ def train_explicit_plan_model(
     max_steps: int = 0,
     seed: int = 17,
     device_name: str = "auto",
+    label_policy: str = "reviewed",
+    cpu_threads: int | None = None,
 ) -> dict:
     if epochs < 1 or batch_size < 1 or max_steps < 0:
         raise ValueError("epochs and batch size must be positive; max_steps cannot be negative")
+    if cpu_threads is not None and cpu_threads < 1:
+        raise ValueError("cpu_threads must be positive")
     output = Path(output_path)
     assert_new_model_artifact(output, registry_path)
-    records = _event_records(events_path, plans_path)
+    if label_policy not in {"reviewed", "weak-extractive"}:
+        raise ValueError("label_policy must be reviewed or weak-extractive")
+    records = _event_records(events_path, plans_path, label_policy)
     train_records, validation_records, test_records = _chronological_split(records)
-    train_examples = _flatten_examples(train_records)
-    validation_examples = _flatten_examples(validation_records)
-    test_examples = _flatten_examples(test_records)
+    train_examples = _flatten_examples(train_records, context_length, label_policy)
+    validation_examples = _flatten_examples(validation_records, context_length, label_policy)
+    test_examples = _flatten_examples(test_records, context_length, label_policy)
     if not train_examples or not validation_examples or not test_examples:
         raise ValueError("each chronological split must contain at least one talking-point example")
 
@@ -259,6 +291,8 @@ def train_explicit_plan_model(
         "cuda" if device_name == "auto" and torch.cuda.is_available()
         else "cpu" if device_name == "auto" else device_name
     )
+    if cpu_threads is not None and device.type == "cpu":
+        torch.set_num_threads(cpu_threads)
     train_texts = [row["prefix_text"] for row in train_examples]
     train_texts.extend(row["target"]["text"] for row in train_examples)
     vocabulary = build_vocabulary(
@@ -292,7 +326,8 @@ def train_explicit_plan_model(
             "epochs": epochs, "batch_size": batch_size, "max_steps_per_epoch": max_steps,
             "seed": seed, "device": str(device), "optimizer": "AdamW",
             "learning_rate": 3e-4, "weight_decay": 0.01,
-            "label_policy": "reviewed plans only",
+            "cpu_threads": torch.get_num_threads() if device.type == "cpu" else None,
+            "label_policy": label_policy,
             "examples": {
                 "train": len(train_examples),
                 "validation": len(validation_examples),
@@ -328,11 +363,10 @@ def train_explicit_plan_model(
             token_count = int(targets.ne(config.pad_id).sum())
             total_loss += float(result["loss"].detach()) * token_count
             train_tokens += token_count
-        validation = _evaluate(model, validation_loader, device)
+        validation = _evaluate(model, validation_loader, device, greedy_paths=False)
         print(
             f"explicit-plan epoch {epoch}: train_loss={total_loss / max(1, train_tokens):.4f} "
-            f"validation_loss={validation['loss']:.4f} "
-            f"validation_greedy_exact_path={validation['greedy_exact_path_accuracy']:.4f}"
+            f"validation_loss={validation['loss']:.4f}"
         )
         if validation["loss"] < best_validation:
             best_validation = validation["loss"]

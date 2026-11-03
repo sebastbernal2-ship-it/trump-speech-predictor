@@ -22,4 +22,4 @@ Model weights and transcript data remain local and ignored by Git. The registry 
 
 ## Explicit plan-path model
 
-The first semantic planner is `speechplan-explicit/plan-path-v1`, separate from the existing SpeechPlan-H continuation architecture. Draft plan annotations are not training labels. Each trained run records the reviewed-plan dataset hash and plan-path metrics separately from continuation and wording metrics.
+The explicit path model is `speechplan-explicit/plan-path-v1`, separate from SpeechPlan-H. Each run records its label policy and both the source-event and plan-label hashes. `reviewed` accepts only human-reviewed plans. `weak-extractive` accepts only draft plans bearing the extractive-labeler source marker and is a separate weak-supervision experiment; its metrics are not semantic idea accuracy. Keep plan-path metrics separate from continuation and wording metrics.

@@ -125,8 +125,18 @@ def main(argv: list[str] | None = None) -> int:
     hybrid_train.add_argument("--max-steps", type=int, default=0, help="cap training steps per epoch for smoke tests")
     hybrid_train.add_argument("--evidence-pairs", help="dated evidence mappings keyed by question segment ID")
 
+    weak_labels = sub.add_parser(
+        "weak-plan-labels", help="create explicitly weak extractive plan labels from real Roll Call speech transcripts"
+    )
+    weak_labels.add_argument("--events", default="data/rollcall-events.jsonl")
+    weak_labels.add_argument("--speech-records", default="data/rollcall-by-type/trump-long-speeches.jsonl")
+    weak_labels.add_argument("--output", default="data/rollcall-weak-speech-plans.jsonl")
+    weak_labels.add_argument("--section-turns", type=int, default=15)
+    weak_labels.add_argument("--point-turns", type=int, default=3)
+    weak_labels.add_argument("--top-terms", type=int, default=4)
+
     explicit_train = sub.add_parser(
-        "explicit-plan-train", help="train the separate theme/section/talking-point predictor on reviewed plans"
+        "explicit-plan-train", help="train the theme/section/talking-point predictor on reviewed or explicit weak labels"
     )
     explicit_train.add_argument("--events", default="data/rollcall-events.jsonl")
     explicit_train.add_argument("--plans", default="data/rollcall-speech-plans.jsonl")
@@ -134,8 +144,18 @@ def main(argv: list[str] | None = None) -> int:
     explicit_train.add_argument("--registry", default="models/registry.jsonl")
     explicit_train.add_argument("--epochs", type=int, default=5)
     explicit_train.add_argument("--batch-size", type=int, default=16)
+    explicit_train.add_argument("--context-length", type=int, default=128)
+    explicit_train.add_argument("--plan-length", type=int, default=96)
+    explicit_train.add_argument("--width", type=int, default=128)
+    explicit_train.add_argument("--layers", type=int, default=4)
+    explicit_train.add_argument("--heads", type=int, default=4)
+    explicit_train.add_argument("--min-frequency", type=int, default=2)
+    explicit_train.add_argument("--max-vocabulary", type=int, default=20_000)
+    explicit_train.add_argument("--seed", type=int, default=17)
+    explicit_train.add_argument("--cpu-threads", type=int, default=0)
     explicit_train.add_argument("--device", default="auto")
     explicit_train.add_argument("--max-steps", type=int, default=0)
+    explicit_train.add_argument("--label-policy", choices=("reviewed", "weak-extractive"), default="reviewed")
 
     explicit_predict = sub.add_parser(
         "explicit-plan-predict", help="predict a theme/section/talking-point path from an observed prefix"
@@ -332,14 +352,27 @@ def main(argv: list[str] | None = None) -> int:
                 registry_path=args.registry,
             )
             print(f"Saved SpeechPlan-H version {result['model_version']}: {result['output']}")
+        elif args.command == "weak-plan-labels":
+            from .weak_plan_labels import create_weak_plan_labels
+
+            print(create_weak_plan_labels(
+                args.events, args.speech_records, args.output,
+                section_turns=args.section_turns, point_turns=args.point_turns,
+                top_terms=args.top_terms,
+            ))
         elif args.command == "explicit-plan-train":
             from .explicit_plan import train_explicit_plan_model
 
             result = train_explicit_plan_model(
                 args.events, args.plans, args.output,
                 registry_path=args.registry, epochs=args.epochs,
-                batch_size=args.batch_size, max_steps=args.max_steps,
-                device_name=args.device,
+                batch_size=args.batch_size, context_length=args.context_length,
+                plan_length=args.plan_length, width=args.width,
+                layers=args.layers, heads=args.heads,
+                min_frequency=args.min_frequency, max_vocabulary=args.max_vocabulary,
+                seed=args.seed, max_steps=args.max_steps,
+                device_name=args.device, label_policy=args.label_policy,
+                cpu_threads=args.cpu_threads or None,
             )
             print(
                 f"Saved explicit plan version {result['model_version']} to {result['output']}; "
