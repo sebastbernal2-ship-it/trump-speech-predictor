@@ -6,7 +6,7 @@ only after the fact to mark literal/near-literal mention evidence.
 
 from __future__ import annotations
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 import hashlib
 import json
 import math
@@ -111,11 +111,21 @@ def _display_issue_phrase(span: list[tuple[str, str, int, int]]) -> str:
 
 
 def extract_headline_ideas(sources: list[dict[str, Any]], as_of: str, *, max_terms: int = 2) -> list[dict[str, Any]]:
-    """Extract scored single-term or compact issue-phrase candidates from headlines."""
-    try:
-        cutoff = date.fromisoformat(as_of)
-    except (TypeError, ValueError):
-        raise ValueError("as_of must be an ISO date (YYYY-MM-DD)") from None
+    """Extract scored issue candidates; timestamp cutoffs allow verified pre-cutoff same-day sources."""
+    cutoff_at = None
+    if isinstance(as_of, str) and "T" in as_of:
+        try:
+            cutoff_at = datetime.fromisoformat(as_of.replace("Z", "+00:00"))
+        except ValueError:
+            raise ValueError("as_of must be an ISO date or timezone-aware timestamp") from None
+        if cutoff_at.tzinfo is None or cutoff_at.utcoffset() is None:
+            raise ValueError("timestamp as_of must include a timezone")
+        cutoff = cutoff_at.date()
+    else:
+        try:
+            cutoff = date.fromisoformat(as_of)
+        except (TypeError, ValueError):
+            raise ValueError("as_of must be an ISO date or timezone-aware timestamp") from None
     if not isinstance(sources, list):
         raise ValueError("sources must be a list")
     if max_terms < 1:
@@ -129,12 +139,25 @@ def extract_headline_ideas(sources: list[dict[str, Any]], as_of: str, *, max_ter
         if not isinstance(title, str) or not title.strip():
             raise ValueError("each context source needs a nonempty title")
         raw_date = source.get("published_at") or source.get("published_date")
-        try:
-            published = date.fromisoformat(str(raw_date)[:10])
-        except (TypeError, ValueError):
-            raise ValueError(f"invalid publication date for context source: {title}") from None
-        if published >= cutoff:
-            raise ValueError(f"same-day or later source is ineligible: {title}")
+        if cutoff_at is not None:
+            try:
+                published_at = datetime.fromisoformat(str(raw_date).replace("Z", "+00:00"))
+            except (TypeError, ValueError):
+                raise ValueError(f"invalid publication timestamp for context source: {title}") from None
+            if published_at.tzinfo is None or published_at.utcoffset() is None:
+                raise ValueError(f"publication timestamp needs a timezone: {title}")
+            if published_at >= cutoff_at:
+                raise ValueError(f"source published at or after the prediction cutoff: {title}")
+            published = published_at.date()
+            published_value = str(raw_date)
+        else:
+            try:
+                published = date.fromisoformat(str(raw_date)[:10])
+            except (TypeError, ValueError):
+                raise ValueError(f"invalid publication date for context source: {title}") from None
+            if published >= cutoff:
+                raise ValueError(f"same-day or later source is ineligible: {title}")
+            published_value = published.isoformat()
         earliest = min(earliest, published)
         url = source.get("source_url") or source.get("url") or source.get("source_id")
         if not isinstance(url, str) or not url:
@@ -159,7 +182,8 @@ def extract_headline_ideas(sources: list[dict[str, Any]], as_of: str, *, max_ter
                 bucket["sources"].setdefault(url, {
                     "title": title.strip(),
                     "publisher": publisher,
-                    "published_at": published.isoformat(),
+                    "published_at": published_value,
+                    "observed_at": source.get("observed_at"),
                     "url": url,
                     "query_purposes": list(source.get("query_purposes", [])),
                 })
@@ -173,7 +197,7 @@ def extract_headline_ideas(sources: list[dict[str, Any]], as_of: str, *, max_ter
         )
         publishers = {item["publisher"].casefold() for item in sources_for_idea if item["publisher"]}
         freshness = sum(
-            1 - (cutoff - date.fromisoformat(item["published_at"])).days / lookback
+            1 - (cutoff - date.fromisoformat(item["published_at"][:10])).days / lookback
             for item in sources_for_idea
         ) / len(sources_for_idea)
         ideas.append({
