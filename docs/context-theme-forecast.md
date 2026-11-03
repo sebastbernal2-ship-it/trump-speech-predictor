@@ -2,7 +2,7 @@
 
 ## Task
 
-This experiment ranks broad theme families that may appear in a future speech from dated context headlines. It is separate from transcript continuation, question-response prediction, and explicit plan-path generation. The current fixed families are elections/governance, economy/jobs, immigration, national security, public safety, health, culture/education/religion, media, energy/environment, and disasters/local resources. It does not yet generate arbitrary event-specific candidate themes such as a named controversy.
+This experiment ranks broad theme families that may appear in a future speech from dated context headlines. It is separate from transcript continuation, question-response prediction, and explicit plan-path generation. The current fixed families are elections/governance, economy/jobs, immigration, national security, public safety, health, culture/education/religion, media, energy/environment, and disasters/local resources. A separate lexical candidate layer can surface source-grounded topics such as a named controversy, but does not generate arbitrary semantic ideas or establish their likely inclusion in a speech.
 
 The CLI is:
 
@@ -29,9 +29,15 @@ The Bernoulli naive-Bayes posterior is emitted as an **uncalibrated ranking scor
 
 The v1 split is 16 train / 2 validation / 2 test events. On the two-event test, context Naive Bayes and the training-prevalence baseline both had micro-F1 **0.727**, macro-F1 **0.433**, mean precision@4 **0.875**, and mean recall@4 **0.75**. The context model's uncalibrated Brier score was **0.299**, worse than the baseline's **0.164**. It did not improve top-four selection on this tiny holdout; its posterior values saturated near 0 and 1 and its evidence included generic, irrelevant terms. These are weak-label diagnostics, not semantic-accuracy claims. Two events cannot establish generalization or calibration.
 
-The frozen Qatar and Henderson context maps include assistant-authored theme drafts and turn-level outcomes. Their manually curated candidate lists are not independent benchmarks and contain no negative candidates; their 4/4 broad-topic overlap is not model performance or predictive lift.
+The frozen Qatar and Henderson context maps include assistant-authored theme drafts and turn-level outcomes. Their manually curated candidate lists are not independent benchmarks and contain no negative candidates; their 4/4 broad-topic overlap is not model performance or predictive lift. The lexical candidate generator finds the four intended source topics in Henderson and four related topics in Qatar, but these same curated sources make this only a functionality demonstration.
 
 In an exploratory replay of Henderson's frozen context, the v1 ranker (trained on the earlier 16 pilot events) ranked economy #1, election #2, foreign policy #3, immigration #4, and media #9. It missed the desired garbage-controversy/media idea from its top four and did not name specific Nevada-turnout or working-class themes. This is a concrete failure of the requested specific idea selection despite the broad-family overlap. The detailed replay and hashes are in the ignored local artifact `data/rollcall-context-theme-case-replay-v1.json`.
+
+## Source-derived candidate diagnostic
+
+`speechprefix context-candidates --input <context-map-or-snapshot-jsonl> [--event-id ID]` extracts lexically matched topic candidates with dated source citations. This is a candidate-generation aid, not a probability model. `speechprefix context-candidate-evaluate` compares its fixed lexical candidates, ranked by source count/diversity/recency, with the training-prevalence baseline.
+
+On the same exploratory 16/2/2 split, source-evidence top-four achieved mean precision@4 **0.50** and mean recall@4 **0.417**, below training-prevalence top-four (**0.875** and **0.75**) on two test events. The unranked source candidate set had mean precision **0.833** but mean recall **0.417**, indicating that the lexical layer can retrieve plausible candidates while missing many weakly labeled families; its ranking did not beat the trivial baseline. All results use unreviewed sources and assistant-drafted labels and are not semantic accuracy estimates. A new immutable diagnostic is saved locally as `data/rollcall-context-candidate-evaluation-v2.json`; do not overwrite it. The v1 report is retained as a prior artifact from before tightening diplomacy/Israel matching.
 
 ## Next gates
 

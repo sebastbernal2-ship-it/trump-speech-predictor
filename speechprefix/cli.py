@@ -113,6 +113,13 @@ def main(argv: list[str] | None = None) -> int:
     context_candidates.add_argument("--input", required=True, help="JSON context map or JSONL snapshot file")
     context_candidates.add_argument("--event-id", help="select an event from a multi-event JSONL input")
 
+    context_candidate_eval = sub.add_parser(
+        "context-candidate-evaluate", help="evaluate source-derived issue candidates against weak theme labels"
+    )
+    context_candidate_eval.add_argument("--snapshots", default="data/rollcall-context-snapshots-v1.jsonl")
+    context_candidate_eval.add_argument("--labels", default="data/rollcall-theme-family-drafts-v1.jsonl")
+    context_candidate_eval.add_argument("--output", default="data/rollcall-context-candidate-evaluation-v1.json")
+
     llm = sub.add_parser("llm", help="run a Hugging Face causal-LM continuation baseline")
     llm.add_argument("--model", default="openai-community/gpt2")
     llm.add_argument("--revision", help="Hugging Face model commit; the default GPT-2 revision is pinned")
@@ -360,6 +367,17 @@ def main(argv: list[str] | None = None) -> int:
                 "event_date": record["event_date"],
                 "candidate_policy": "heuristic source-derived topics; evidence scores are not probabilities",
                 "candidates": extract_context_candidates(record["sources"], record["event_date"]),
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "context-candidate-evaluate":
+            import json
+            from .context_candidate_evaluation import evaluate_context_candidate_ranker
+
+            result = evaluate_context_candidate_ranker(args.snapshots, args.labels, output_path=args.output)
+            print(json.dumps({
+                "output": args.output,
+                "test_metrics": result["test_metrics"],
+                "test_predictions": result["test_predictions"],
+                "limitations": result["limitations"],
             }, ensure_ascii=False, indent=2))
         elif args.command == "llm":
             from .hybrid import combine_candidate_mass
