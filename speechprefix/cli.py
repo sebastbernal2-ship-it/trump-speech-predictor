@@ -148,6 +148,14 @@ def main(argv: list[str] | None = None) -> int:
     theme_review.add_argument("--key", default="data/rollcall-theme-review-key-v1.json")
     theme_review.add_argument("--seed", type=int, default=17)
 
+    theme_review_agreement = sub.add_parser(
+        "theme-review-agreement", help="validate completed blind theme forms and report inter-annotator agreement"
+    )
+    theme_review_agreement.add_argument("--annotator-a", default="data/rollcall-theme-review-annotator-a-v1.jsonl")
+    theme_review_agreement.add_argument("--annotator-b", default="data/rollcall-theme-review-annotator-b-v1.jsonl")
+    theme_review_agreement.add_argument("--key", default="data/rollcall-theme-review-key-v1.json")
+    theme_review_agreement.add_argument("--output", default="data/rollcall-theme-review-agreement-v1.json")
+
     llm = sub.add_parser("llm", help="run a Hugging Face causal-LM continuation baseline")
     llm.add_argument("--model", default="openai-community/gpt2")
     llm.add_argument("--revision", help="Hugging Face model commit; the default GPT-2 revision is pinned")
@@ -460,6 +468,21 @@ def main(argv: list[str] | None = None) -> int:
                 "annotator_b": args.annotator_b,
                 "hidden_key": args.key,
                 "limitations": "pilot packets only; annotations require independent human review and adjudication",
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "theme-review-agreement":
+            import json
+            from .theme_review_evaluation import evaluate_theme_review_agreement
+
+            result = evaluate_theme_review_agreement(
+                args.annotator_a, args.annotator_b, args.key, output_path=args.output,
+            )
+            print(json.dumps({
+                "output": args.output,
+                "item_count": result["item_count"],
+                "overall_family_agreement": result["overall_family_agreement"],
+                "per_family": result["per_family"],
+                "adjudication_required": result["adjudication_required"],
+                "limitations": result["limitations"],
             }, ensure_ascii=False, indent=2))
         elif args.command == "llm":
             from .hybrid import combine_candidate_mass
