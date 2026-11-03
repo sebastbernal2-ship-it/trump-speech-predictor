@@ -36,6 +36,9 @@ data/rollcall-context-prospective-*.json
 data/rollcall-theme-review-annotator-*.jsonl
 data/rollcall-theme-review-key-*.json
 data/rollcall-theme-review-agreement-*.json
+data/rollcall-theme-adjudication-*.jsonl
+data/rollcall-theme-adjudication-template-*.jsonl
+data/rollcall-theme-reviewed-*.jsonl
 data/rollcall-context-idea-candidates-*.jsonl
 checkpoints/
 .DS_Store
