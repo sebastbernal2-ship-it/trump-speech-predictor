@@ -52,12 +52,9 @@ def read_source_ledger(path: str | Path) -> list[dict[str, Any]]:
     return rows
 
 
-def append_source_records(input_path: str | Path, ledger_path: str | Path) -> dict[str, int]:
-    """Validate and append new source items, treating identical IDs idempotently."""
-    input_file, ledger_file = Path(input_path), Path(ledger_path)
-    if input_file.resolve() == ledger_file.resolve():
-        raise ValueError("source import input and ledger paths must differ")
-    incoming = _read_jsonl(input_file)
+def append_source_items(incoming: list[dict[str, Any]], ledger_path: str | Path) -> dict[str, int]:
+    """Validate and append source objects, treating identical IDs idempotently."""
+    ledger_file = Path(ledger_path)
     by_id: dict[str, dict[str, Any]] = {}
     for row in incoming:
         source_id = validate_source_evidence(row)["source_id"]
@@ -87,9 +84,16 @@ def append_source_records(input_path: str | Path, ledger_path: str | Path) -> di
                 stream.flush()
                 os.fsync(stream.fileno())
         except Exception:
-            # fdopen owns the descriptor after it succeeds.
             raise
     return {"incoming_unique": len(by_id), "appended": len(additions), "already_present_identically": skipped}
+
+
+def append_source_records(input_path: str | Path, ledger_path: str | Path) -> dict[str, int]:
+    """Validate and append JSONL source items; identical IDs are idempotent."""
+    input_file, ledger_file = Path(input_path), Path(ledger_path)
+    if input_file.resolve() == ledger_file.resolve():
+        raise ValueError("source import input and ledger paths must differ")
+    return append_source_items(_read_jsonl(input_file), ledger_file)
 
 
 def _parse_time(value: str, field: str) -> datetime:
@@ -117,8 +121,9 @@ def freeze_idea_input_snapshot(
     if output.exists():
         raise FileExistsError(f"refusing to overwrite input snapshot: {output}")
     try:
-        manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
+        manifest_bytes = manifest_file.read_bytes()
+        manifest = json.loads(manifest_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
         raise ValueError(f"invalid event manifest JSON: {manifest_file}") from None
     event = validate_event_manifest(manifest)
     cutoff = _parse_time(event["prediction_cutoff_at"], "prediction_cutoff_at")
@@ -156,6 +161,24 @@ def freeze_idea_input_snapshot(
         if eligible and (published >= lookback_start or source_id in required):
             selected[source_id] = source
 
+    required_sources = {source_id: selected[source_id] for source_id in required}
+    required_canonical_ids = {
+        row.get("canonical_source_id", source_id) for source_id, row in required_sources.items()
+    }
+    optional_by_canonical: dict[str, tuple[datetime, str, dict[str, Any]]] = {}
+    for source_id, source in selected.items():
+        if source_id in required:
+            continue
+        canonical_id = source.get("canonical_source_id", source_id)
+        if canonical_id in required_canonical_ids:
+            continue
+        prior = optional_by_canonical.get(canonical_id)
+        observed = _parse_time(source["observed_at"], "observed_at")
+        if prior is None or observed > prior[0]:
+            optional_by_canonical[canonical_id] = (observed, source_id, source)
+    selected = dict(required_sources)
+    selected.update({source_id: source for _, source_id, source in optional_by_canonical.values()})
+
     frozen_manifest = json.loads(json.dumps(manifest, ensure_ascii=False))
     snapshot: dict[str, Any] = {
         "schema_version": 1,
@@ -164,11 +187,11 @@ def freeze_idea_input_snapshot(
         "prediction_cutoff_at": event["prediction_cutoff_at"],
         "snapshot_created_at": created.isoformat(),
         "lookback_days": lookback_days,
-        "event_manifest_sha256": hashlib.sha256(manifest_file.read_bytes()).hexdigest(),
+        "event_manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
         "event_manifest": frozen_manifest,
         "input_source_ids": sorted(selected),
         "sources": sorted(
-            selected.values(), key=lambda row: (row["observed_at"], row["source_id"]),
+            selected.values(), key=lambda row: (_parse_time(row["observed_at"], "observed_at"), row["source_id"]),
         ),
     }
     canonical = _canonical(snapshot)

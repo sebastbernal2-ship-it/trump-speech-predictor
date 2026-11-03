@@ -71,7 +71,10 @@ class IdeaLayerLedgerTests(unittest.TestCase):
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
             sources = [
                 self._source("schedule", "event_metadata", "Official schedule", "2030-01-19T10:00:00Z", "2030-01-19T10:05:00Z"),
-                self._source("news-oil", "news", "Oil disruption headline", "2030-01-20T12:00:00Z", "2030-01-20T12:10:00Z"),
+                self._source("news-oil", "news", "Oil disruption headline", "2030-01-20T12:00:00Z", "2030-01-20T12:10:00Z", canonical_source_id="news-oil-canonical"),
+                self._source("news-oil-later-capture", "news", "Oil disruption headline", "2030-01-20T12:00:00Z", "2030-01-20T14:00:00Z", canonical_source_id="news-oil-canonical"),
+                self._source("news-gaza-first", "news", "Gaza ceasefire talks", "2030-01-20T11:00:00Z", "2030-01-20T11:10:00Z", canonical_source_id="news-gaza-canonical"),
+                self._source("news-gaza-later", "news", "Gaza ceasefire talks", "2030-01-20T11:00:00Z", "2030-01-20T14:59:00Z", canonical_source_id="news-gaza-canonical"),
                 self._source("post-1", "trump_post", "We are watching oil.", "2030-01-20T13:00:00Z", "2030-01-20T13:02:00Z", account="realDonaldTrump", post_id="123"),
                 self._source("old", "news", "Old story", "2029-01-01T00:00:00Z", "2029-01-01T00:01:00Z"),
                 self._source("unverified", "news", "Unverified story", "2030-01-20T11:00:00Z", "2030-01-20T11:01:00Z", status="unknown"),
@@ -84,8 +87,8 @@ class IdeaLayerLedgerTests(unittest.TestCase):
                 frozen_at=datetime(2030, 1, 20, 15, 0, tzinfo=timezone.utc),
             )
             snapshot = json.loads(output.read_text(encoding="utf-8"))
-            self.assertEqual(set(snapshot["input_source_ids"]), {"schedule", "news-oil", "post-1"})
-            self.assertEqual(result["source_count"], 3)
+            self.assertEqual(set(snapshot["input_source_ids"]), {"schedule", "news-oil", "news-gaza-later", "post-1"})
+            self.assertEqual(result["source_count"], 4)
             self.assertTrue(validate_idea_input_snapshot(snapshot)["strict_pre_cutoff"])
             snapshot["lookback_days"] = 31
             with self.assertRaisesRegex(ValueError, "snapshot_sha256"):

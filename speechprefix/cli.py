@@ -127,6 +127,23 @@ def main(argv: list[str] | None = None) -> int:
     idea_source_import.add_argument("--input", required=True, help="JSONL source-evidence records")
     idea_source_import.add_argument("--ledger", default="data/idea-layer/source-ledger.jsonl")
 
+    idea_post_import = sub.add_parser(
+        "idea-post-import", help="normalize and append permitted Trump-post archive records"
+    )
+    idea_post_import.add_argument("--input", required=True, help="JSONL v1 Trump-post archive export")
+    idea_post_import.add_argument("--ledger", default="data/idea-layer/source-ledger.jsonl")
+
+    idea_news_collect = sub.add_parser(
+        "idea-news-collect", help="capture timestamped Google News headlines for an upcoming event"
+    )
+    idea_news_collect.add_argument("--manifest", required=True, help="event manifest with a future prediction cutoff")
+    idea_news_collect.add_argument("--query", action="append", required=True, help="predeclared topic query; repeatable")
+    idea_news_collect.add_argument("--ledger", default="data/idea-layer/source-ledger.jsonl")
+    idea_news_collect.add_argument("--report", required=True, help="new immutable retrieval report JSON")
+    idea_news_collect.add_argument("--lookback-days", type=int, default=30)
+    idea_news_collect.add_argument("--delay", type=float, default=0.5)
+    idea_news_collect.add_argument("--timeout", type=float, default=20)
+
     idea_snapshot_freeze = sub.add_parser(
         "idea-snapshot-freeze", help="freeze verified news, posts, and event details before a speech cutoff"
     )
@@ -523,6 +540,58 @@ def main(argv: list[str] | None = None) -> int:
 
             result = append_source_records(args.input, args.ledger)
             print(json.dumps({"ledger": args.ledger, **result}, ensure_ascii=False, indent=2))
+        elif args.command == "idea-post-import":
+            import json
+            from .idea_layer.ledger import append_source_items
+            from .idea_layer.posts import load_trump_post_export
+
+            sources = load_trump_post_export(args.input)
+            result = append_source_items(sources, args.ledger)
+            print(json.dumps({"ledger": args.ledger, "normalized_posts": len(sources), **result}, ensure_ascii=False, indent=2))
+        elif args.command == "idea-news-collect":
+            import hashlib
+            import json
+            from .idea_layer.contracts import validate_event_manifest
+            from .idea_layer.ledger import append_source_items
+            from .idea_layer.news import retrieve_google_news_evidence
+
+            report_path = Path(args.report)
+            if report_path.exists():
+                raise FileExistsError(f"refusing to overwrite retrieval report: {report_path}")
+            if report_path.resolve() == Path(args.ledger).resolve():
+                raise ValueError("retrieval report and source ledger paths must differ")
+            manifest_path = Path(args.manifest)
+            manifest_bytes = manifest_path.read_bytes()
+            manifest = json.loads(manifest_bytes.decode("utf-8"))
+            event = validate_event_manifest(manifest)
+            capture = retrieve_google_news_evidence(
+                args.query, event["prediction_cutoff_at"], lookback_days=args.lookback_days,
+                timeout_seconds=args.timeout, delay_seconds=args.delay,
+            )
+            ledger_result = append_source_items(capture["sources"], args.ledger)
+            report = {
+                "schema_version": 1,
+                "record_type": "idea-layer-news-capture-run",
+                "event_id": event["event_id"],
+                "event_manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+                "ledger_path": args.ledger,
+                "ledger_append": ledger_result,
+                "capture": capture,
+            }
+            report["report_sha256"] = hashlib.sha256(
+                json.dumps(report, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            ).hexdigest()
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            with report_path.open("x", encoding="utf-8") as stream:
+                json.dump(report, stream, ensure_ascii=False, indent=2)
+                stream.write("\n")
+            print(json.dumps({
+                "report": args.report,
+                "event_id": event["event_id"],
+                "captured_headlines": capture["unique_headline_count"],
+                "ledger_append": ledger_result,
+                "report_sha256": report["report_sha256"],
+            }, ensure_ascii=False, indent=2))
         elif args.command == "idea-snapshot-freeze":
             import json
             from .idea_layer.ledger import freeze_idea_input_snapshot

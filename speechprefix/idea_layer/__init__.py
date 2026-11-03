@@ -1,11 +1,10 @@
 """Standalone, evidence-timed idea forecasting layer.
 
 This package is intentionally separate from transcript continuation and
-word-generation models. Its contracts are the stable boundary for future
-retrieval, ranking, and in-speech update components.
+word-generation models. Its contracts are the stable boundary for evidence
+retrieval/import, ranking, and in-speech update components.
 """
 
-from .ledger import append_source_records, freeze_idea_input_snapshot, read_source_ledger
 from .contracts import (
     is_source_eligible_at,
     validate_event_manifest,
@@ -14,12 +13,19 @@ from .contracts import (
     validate_pre_speech_forecast,
     validate_source_evidence,
 )
+from .ledger import append_source_items, append_source_records, freeze_idea_input_snapshot, read_source_ledger
+from .news import retrieve_google_news_evidence
+from .posts import load_trump_post_export, normalize_trump_post_export
 
 __all__ = [
+    "append_source_items",
     "append_source_records",
     "freeze_idea_input_snapshot",
     "is_source_eligible_at",
+    "load_trump_post_export",
+    "normalize_trump_post_export",
     "read_source_ledger",
+    "retrieve_google_news_evidence",
     "validate_event_manifest",
     "validate_idea_input_snapshot",
     "validate_idea_update",

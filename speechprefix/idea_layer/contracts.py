@@ -59,6 +59,8 @@ def validate_source_evidence(source: dict[str, Any]) -> dict[str, str]:
     if source.get("schema_version") != 1 or source.get("record_type") != "idea-layer-source":
         raise ValueError("source evidence must use schema_version 1 and record_type idea-layer-source")
     source_id = _required_text(source, "source_id")
+    if "canonical_source_id" in source:
+        _required_text(source, "canonical_source_id")
     source_type = source.get("source_type")
     if source_type not in SOURCE_TYPES:
         raise ValueError(f"unsupported source_type: {source_type!r}")
@@ -155,11 +157,16 @@ def validate_idea_input_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(sources, list) or not isinstance(input_ids, list):
         raise ValueError("snapshot sources and input_source_ids must be lists")
     source_by_id = {}
+    canonical_ids = set()
     for source in sources:
         validated = validate_source_evidence(source)
         source_id = validated["source_id"]
         if source_id in source_by_id:
             raise ValueError(f"duplicate source_id in snapshot: {source_id}")
+        canonical_id = source.get("canonical_source_id", source_id)
+        if canonical_id in canonical_ids:
+            raise ValueError(f"duplicate canonical source in snapshot: {canonical_id}")
+        canonical_ids.add(canonical_id)
         source_by_id[source_id] = source
         observed = _timestamp(source["observed_at"], "observed_at")
         if observed > created:
