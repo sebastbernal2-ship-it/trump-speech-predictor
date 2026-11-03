@@ -100,6 +100,13 @@ def main(argv: list[str] | None = None) -> int:
     context.add_argument("--limit", type=int, default=10)
     context.add_argument("--output", default="data/world_context.jsonl")
 
+    context_theme_eval = sub.add_parser(
+        "context-theme-evaluate", help="evaluate a weak, chronological context-to-theme ranking baseline"
+    )
+    context_theme_eval.add_argument("--snapshots", default="data/rollcall-context-snapshots-v1.jsonl")
+    context_theme_eval.add_argument("--labels", default="data/rollcall-theme-family-drafts-v1.jsonl")
+    context_theme_eval.add_argument("--output", default="data/rollcall-context-theme-evaluation-v1.json")
+
     llm = sub.add_parser("llm", help="run a Hugging Face causal-LM continuation baseline")
     llm.add_argument("--model", default="openai-community/gpt2")
     llm.add_argument("--revision", help="Hugging Face model commit; the default GPT-2 revision is pinned")
@@ -326,6 +333,17 @@ def main(argv: list[str] | None = None) -> int:
             records = search_documents(args.as_of, args.query, args.limit, args.lookback_days)
             added = append_context(args.output, records)
             print(f"Found {len(records)} pre-event documents; appended {added} new records to {args.output}.")
+        elif args.command == "context-theme-evaluate":
+            import json
+            from .context_theme_evaluation import evaluate_context_theme_ranker
+
+            result = evaluate_context_theme_ranker(args.snapshots, args.labels, output_path=args.output)
+            print(json.dumps({
+                "output": args.output,
+                "test_metrics": result["test_metrics"],
+                "test_predictions": result["test_predictions"],
+                "limitations": result["limitations"],
+            }, ensure_ascii=False, indent=2))
         elif args.command == "llm":
             from .hybrid import combine_candidate_mass
             from .llm import CausalLM
