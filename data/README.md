@@ -89,3 +89,9 @@ Prediction alignments are supplied in the optional `prediction_annotations` arra
 ```
 
 Idea labels must be human-reviewed semantic tags. They are evaluated separately from the exact transcript words. StressLens, topics, entities, and moderation labels remain source annotations; they are not treated as verified idea labels. The `prediction_example_inputs` helper separates `input`, `target`, and `provenance`; use only the `input` object as model features. Page metadata and per-span annotations are kept in provenance because they may not have been available at the prediction time.
+
+## Issue-phrase review sample
+
+`rollcall-theme-review-selection-v2.jsonl` is a deterministic, quarter-stratified random sample of four events from each quarter, 2024-Q4 through 2025-Q4 (20 total), drawn from the pre-test 2024-10-11 to 2025-12-24 transcript frame. Selection seed: 240717. The two blank transcript-only reviewer packets are `rollcall-theme-review-annotator-a-v2.jsonl` and `rollcall-theme-review-annotator-b-v2.jsonl`; they omit IDs, dates, titles, URLs, predictions, and extracted issue phrases. Reviewers are prompted to list event-specific ideas before seeing the fixed family taxonomy. The taxonomy definitions are assistant-proposed and not human-adjudicated; they are not gold labels.
+
+The coordinator-only event-ID key is `rollcall-theme-review-key-v2.json`. The separate `rollcall-theme-review-extractor-reference-v2.json` records the v2 automatic phrase labels and citations for later comparison; never share either file with reviewers before both forms are completed and locked. The sample and all review artifacts are Git-ignored. Blank forms are not annotations, and this small development sample is not a representative semantic gold set or test set.

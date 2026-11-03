@@ -34,6 +34,9 @@ data/rollcall-context-candidate-evaluation-*.json
 data/rollcall-context-snapshot-audit-*.json
 data/rollcall-context-prospective-*.json
 data/rollcall-theme-review-annotator-*.jsonl
+data/rollcall-theme-review-selection-*.jsonl
+data/rollcall-theme-review-taxonomy-*.jsonl
+data/rollcall-theme-review-extractor-reference-*.json
 data/rollcall-theme-review-key-*.json
 data/rollcall-theme-review-agreement-*.json
 data/rollcall-theme-adjudication-*.jsonl

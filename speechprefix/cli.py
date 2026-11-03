@@ -200,13 +200,20 @@ def main(argv: list[str] | None = None) -> int:
     theme_review = sub.add_parser(
         "theme-review-packet", help="generate two blinded, transcript-only theme annotation packets"
     )
-    theme_review.add_argument("--snapshots", default="data/rollcall-context-snapshots-v1.jsonl")
+    theme_review.add_argument(
+        "--selection-manifest", "--snapshots", dest="snapshots",
+        default="data/rollcall-context-snapshots-v1.jsonl",
+        help="local event-selection JSONL (legacy alias: --snapshots)",
+    )
     theme_review.add_argument("--events", default="data/rollcall-by-type/trump-speech-candidates.jsonl")
     theme_review.add_argument("--taxonomy", default="data/rollcall-theme-family-drafts-v1.jsonl")
     theme_review.add_argument("--annotator-a", default="data/rollcall-theme-review-annotator-a-v1.jsonl")
     theme_review.add_argument("--annotator-b", default="data/rollcall-theme-review-annotator-b-v1.jsonl")
     theme_review.add_argument("--key", default="data/rollcall-theme-review-key-v1.json")
     theme_review.add_argument("--seed", type=int, default=17)
+    theme_review.add_argument(
+        "--selection-description", default="User-provided event selection; see the local selection manifest.",
+    )
 
     theme_review_agreement = sub.add_parser(
         "theme-review-agreement", help="validate completed blind theme forms and report inter-annotator agreement"
@@ -673,7 +680,7 @@ def main(argv: list[str] | None = None) -> int:
             result = generate_theme_review_packets(
                 args.snapshots, args.events, args.taxonomy,
                 annotator_a_path=args.annotator_a, annotator_b_path=args.annotator_b,
-                key_path=args.key, seed=args.seed,
+                key_path=args.key, seed=args.seed, selection_description=args.selection_description,
             )
             print(json.dumps({
                 "item_count": result["item_count"],
