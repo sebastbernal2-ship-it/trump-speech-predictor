@@ -34,8 +34,30 @@ class HeadlineIdeaMatchingTests(unittest.TestCase):
             "text": "I will end the war in Ukraine."
         }])
         idea = next(item for item in ideas if item["idea_id"] == "ukraine war")
-        self.assertEqual(idea["candidate_idea"], "war Ukraine")
+        self.assertEqual(idea["candidate_idea"], "Ukraine war")
         self.assertEqual(idea["supporting_turn_ids"], ["turn-ukraine"])
+
+    def test_rejects_arbitrary_anchor_pairs(self):
+        ideas = extract_transcript_ideas([{
+            "turn_id": "turn-anchor-filter",
+            "text": "Peace and war are different. Republicans and Democrats disagree. The war in Ukraine must end."
+        }])
+        idea_ids = {idea["idea_id"] for idea in ideas}
+        self.assertIn("ukraine war", idea_ids)
+        self.assertNotIn("peace war", idea_ids)
+        self.assertNotIn("democrat republican", idea_ids)
+
+    def test_keeps_topic_concepts_and_drops_unanchored_name_phrases(self):
+        ideas = extract_transcript_ideas([{
+            "turn_id": "turn-topics",
+            "text": "Hillary Clinton spoke with her brother Fred about trade deficits, the Keystone pipeline, and eminent domain."
+        }])
+        idea_ids = {idea["idea_id"] for idea in ideas}
+        self.assertIn("deficit trade", idea_ids)
+        self.assertIn("keystone pipeline", idea_ids)
+        self.assertIn("domain eminent", idea_ids)
+        self.assertNotIn("brother fred", idea_ids)
+        self.assertNotIn("clinton hillary", idea_ids)
 
     def test_strips_bracketed_audience_cues_from_target_ideas(self):
         ideas = extract_transcript_ideas([{
