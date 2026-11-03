@@ -156,6 +156,22 @@ def main(argv: list[str] | None = None) -> int:
     theme_review_agreement.add_argument("--key", default="data/rollcall-theme-review-key-v1.json")
     theme_review_agreement.add_argument("--output", default="data/rollcall-theme-review-agreement-v1.json")
 
+    theme_review_template = sub.add_parser(
+        "theme-review-adjudication-template", help="create a blank event-ID-free human adjudication form"
+    )
+    theme_review_template.add_argument("--annotator-packet", default="data/rollcall-theme-review-annotator-a-v1.jsonl")
+    theme_review_template.add_argument("--key", default="data/rollcall-theme-review-key-v1.json")
+    theme_review_template.add_argument("--output", default="data/rollcall-theme-adjudication-template-v1.jsonl")
+
+    theme_review_adjudicate = sub.add_parser(
+        "theme-review-adjudicate", help="export human-adjudicated theme labels from completed blind reviews"
+    )
+    theme_review_adjudicate.add_argument("--annotator-a", default="data/rollcall-theme-review-annotator-a-v1.jsonl")
+    theme_review_adjudicate.add_argument("--annotator-b", default="data/rollcall-theme-review-annotator-b-v1.jsonl")
+    theme_review_adjudicate.add_argument("--key", default="data/rollcall-theme-review-key-v1.json")
+    theme_review_adjudicate.add_argument("--decisions", required=True, help="human-written adjudication JSONL")
+    theme_review_adjudicate.add_argument("--output", default="data/rollcall-theme-reviewed-v1.jsonl")
+
     llm = sub.add_parser("llm", help="run a Hugging Face causal-LM continuation baseline")
     llm.add_argument("--model", default="openai-community/gpt2")
     llm.add_argument("--revision", help="Hugging Face model commit; the default GPT-2 revision is pinned")
@@ -484,6 +500,23 @@ def main(argv: list[str] | None = None) -> int:
                 "adjudication_required": result["adjudication_required"],
                 "limitations": result["limitations"],
             }, ensure_ascii=False, indent=2))
+        elif args.command == "theme-review-adjudication-template":
+            import json
+            from .theme_review_adjudication import generate_adjudication_template
+
+            result = generate_adjudication_template(
+                args.annotator_packet, args.key, output_path=args.output,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        elif args.command == "theme-review-adjudicate":
+            import json
+            from .theme_review_adjudication import export_adjudicated_theme_labels
+
+            result = export_adjudicated_theme_labels(
+                args.annotator_a, args.annotator_b, args.key, args.decisions,
+                output_path=args.output,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
         elif args.command == "llm":
             from .hybrid import combine_candidate_mass
             from .llm import CausalLM
