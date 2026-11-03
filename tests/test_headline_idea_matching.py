@@ -114,9 +114,13 @@ class HeadlineIdeaMatchingTests(unittest.TestCase):
                 "published_at": "2025-05-12",
                 "source_url": "https://example.test/ukraine",
                 "publisher": "Example News",
+                "query_purposes": ["foreign_policy"],
             }
             snapshots.write_text(json.dumps({
                 "event_id": "e1", "event_date": "2025-05-14", "exploratory_only": True,
+                "retrieval_profile": "speaker-topic-families",
+                "query_retrieved_at": "2026-01-01T00:00:00+00:00",
+                "queries": [{"purpose": "foreign_policy", "query": "Trump Ukraine", "query_response_sha256": "abc"}],
                 "candidate_sources": [source],
             }) + "\n", encoding="utf-8")
             events.write_text(json.dumps({
@@ -125,7 +129,11 @@ class HeadlineIdeaMatchingTests(unittest.TestCase):
             }) + "\n", encoding="utf-8")
             report = evaluate_headline_idea_overlap(snapshots, events, output_path=output, top_k=(50,))
             self.assertEqual(report["summary_by_top_k"]["top_50"]["events"], 1)
-            self.assertTrue(any(item["idea_id"] == "ukraine war" and item["mentioned_by_target"] for item in report["events"][0]["top_ideas"]))
+            candidate = next(item for item in report["events"][0]["top_ideas"] if item["idea_id"] == "ukraine war")
+            self.assertTrue(candidate["mentioned_by_target"])
+            self.assertEqual(candidate["supporting_sources"][0]["query_purposes"], ["foreign_policy"])
+            self.assertEqual(report["events"][0]["retrieval_profile"], "speaker-topic-families")
+            self.assertEqual(report["events"][0]["retrieval_queries"][0]["query_response_sha256"], "abc")
             self.assertTrue(output.exists())
             with self.assertRaises(FileExistsError):
                 evaluate_headline_idea_overlap(snapshots, events, output_path=output, top_k=(50,))

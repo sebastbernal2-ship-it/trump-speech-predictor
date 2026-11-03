@@ -161,6 +161,7 @@ def extract_headline_ideas(sources: list[dict[str, Any]], as_of: str, *, max_ter
                     "publisher": publisher,
                     "published_at": published.isoformat(),
                     "url": url,
+                    "query_purposes": list(source.get("query_purposes", [])),
                 })
                 bucket["surfaces"][_display_issue_phrase(span)] += 1
     lookback = max(1, (cutoff - earliest).days)
@@ -357,7 +358,8 @@ def evaluate_headline_idea_overlap(
                 {"title": source_by_url[match["turn_id"]]["title"],
                  "publisher": source_by_url[match["turn_id"]].get("publisher", ""),
                  "published_at": source_by_url[match["turn_id"]].get("published_at"),
-                 "url": match["turn_id"]}
+                 "url": match["turn_id"],
+                 "query_purposes": source_by_url[match["turn_id"]].get("query_purposes", [])}
                 for match in headline_matches if match["turn_id"] in source_by_url
             ]
             idea["supported_by_pre_event_headline"] = bool(idea["context_matches"])
@@ -371,7 +373,9 @@ def evaluate_headline_idea_overlap(
         event_rows.append({
             "event_id": event_id,
             "event_date": snapshot["event_date"],
-            "context_retrieved_at": snapshot.get("retrieved_at"),
+            "context_retrieved_at": snapshot.get("query_retrieved_at") or snapshot.get("retrieved_at"),
+            "retrieval_profile": snapshot.get("retrieval_profile") or snapshot.get("context_retrieval_protocol"),
+            "retrieval_queries": snapshot.get("queries", []),
             "context_is_exploratory": snapshot.get("exploratory_only") is True,
             "idea_candidate_count": len(ideas),
             "multiword_candidate_count": len(specific),
