@@ -20,11 +20,16 @@ data/rollcall-weak-speech-plans.jsonl
 data/rollcall-weak-speech-plans-v1.jsonl
 data/rollcall-weak-speech-plans-v2.jsonl
 data/rollcall-assistant-plan-drafts.jsonl
-data/rollcall-theme-only-assistant-pilot-v1.jsonl
+data/rollcall-theme-only-assistant-pilot-v*.jsonl
 data/rollcall-plan-path-v2-evaluation.json
 data/rollcall-assistant-plan-draft-pilot-evaluation.json
 data/rollcall-plan-review-pilot.jsonl
 data/rollcall-plan-review-annotator-*.jsonl
+data/rollcall-context-map-*.json
+data/rollcall-context-snapshots-*.jsonl
+data/rollcall-theme-family-drafts-*.jsonl
+data/rollcall-context-theme-evaluation-*.json
+data/rollcall-context-theme-case-replay-*.json
 checkpoints/
 .DS_Store
 
