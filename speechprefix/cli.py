@@ -121,6 +121,14 @@ def main(argv: list[str] | None = None) -> int:
     context_news_freeze.add_argument("--delay", type=float, default=0.4)
     context_news_freeze.add_argument("--timeout", type=float, default=25)
 
+    speaker_idea_eval = sub.add_parser(
+        "speaker-idea-evaluate", help="walk-forward evaluate recurring issue-phrase forecasts from speaker history"
+    )
+    speaker_idea_eval.add_argument("--input", default="data/rollcall-by-type/trump-speech-candidates.jsonl")
+    speaker_idea_eval.add_argument("--output", default="data/rollcall-speaker-idea-evaluation-v1.json")
+    speaker_idea_eval.add_argument("--train-fraction", type=float, default=0.8)
+    speaker_idea_eval.add_argument("--validation-fraction", type=float, default=0.1)
+
     context_theme_eval = sub.add_parser(
         "context-theme-evaluate", help="evaluate a weak, chronological context-to-theme ranking baseline"
     )
@@ -468,6 +476,28 @@ def main(argv: list[str] | None = None) -> int:
                 delay_seconds=args.delay, timeout_seconds=args.timeout,
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
+        elif args.command == "speaker-idea-evaluate":
+            import json
+            from .speaker_idea_forecast import evaluate_speaker_idea_forecast
+
+            result = evaluate_speaker_idea_forecast(
+                args.input, output_path=args.output, train_fraction=args.train_fraction,
+                validation_fraction=args.validation_fraction,
+            )
+            split_summary = {
+                key: value for key, value in result["split"].items()
+                if not key.endswith("_event_ids")
+            }
+            print(json.dumps({
+                "output": args.output,
+                "selected_half_life_days": result["selected_half_life_days"],
+                "split": split_summary,
+                "validation_metrics_by_half_life": result["validation_metrics_by_half_life"],
+                "validation_metrics_fixed_day_windows": result["validation_metrics_fixed_day_windows"],
+                "test_metrics": result["test_metrics"],
+                "test_metric_differences": result["test_metric_differences"],
+                "limitations": result["limitations"],
+            }, ensure_ascii=False, indent=2))
         elif args.command == "context-theme-evaluate":
             import json
             from .context_theme_evaluation import evaluate_context_theme_ranker
