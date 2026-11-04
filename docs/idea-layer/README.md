@@ -35,9 +35,9 @@ The classifier uses headline-title unigram/bigram features and a Bernoulli Naive
 
 ## Available historical data and current result
 
-The current frozen context union contains 20 topic-family snapshots plus 18 separately collected news snapshots (38 unique events total). Six have no target phrases under the current extractor; 32 are usable. The fixed chronological split is 24 training, 4 validation, and 4 development events. The latest run selected `alpha=4.0`, `min_df=3`, a 20-headline cap, and temperature `8.0`.
+The current frozen context union contains 20 topic-family snapshots plus 18 separately collected news snapshots (38 unique events total). Six have no target phrases under the current extractor; 32 are usable. The whole-date chronological split is 25 training, 3 validation, and 4 development events. A 72-setting validation search selected `alpha=4.0`, `min_df=3`, 20 most recent unique titles, stable capture-order ties, and temperature `8.0`.
 
-On the same four development events, the recent-headline model scored binary log loss **0.699**, nDCG@10 **0.462**, P@4 **0.563**, and recall@10 **0.343**. The no-context prevalence reference scored **0.562**, **0.439**, **0.563**, and **0.315** respectively. Compared with the previous all-headline model, ranking metrics improved modestly, but binary loss worsened and remains worse than prevalence. This is a mixed, highly uncertain experiment—not a successful accuracy claim.
+On the four development events, the stable-order recent-headline model scored binary log loss **0.708**, nDCG@10 **0.475**, P@4 **0.563**, and recall@10 **0.371**. The no-context prevalence reference scored **0.562**, **0.439**, **0.563**, and **0.315** respectively. Of 45 extracted target IDs, 16 appear in the top 10, three are unavailable in prior training, and 26 known IDs rank below top 10. The selected model's three-event validation ranking was very poor (nDCG@10 **0.101**). The development ranking lift is unstable, while binary loss is worse than baseline. See [`../idea-error-analysis.md`](../idea-error-analysis.md) for per-event diagnosis and prioritized next steps.
 
 All 38 snapshots were retrieved after their target speeches. Feed publication dates earlier than an event do not establish that the stories or search results were available then. The development sample is tiny; the target labels are incomplete lexical phrase extractions. These figures are retrospective tuning diagnostics, not semantic accuracy or independent test performance.
 
@@ -46,7 +46,8 @@ Artifacts are local and Git-ignored:
 - `data/rollcall-context-snapshots-retro-combined-v1.jsonl` — SHA-256 `96e94152e3b9318dbe8ab34dc28fd0d3a8f8718fa6f0ed5316cb143d43f33314`
 - Earlier pre-loss-correction report: `data/rollcall-context-to-idea-evaluation-v3.json` — SHA-256 `4f8c44f012ba34c005ffb59f27a99c2ba29391deb760150f95081e9e27accb7d`
 - Corrected-loss all-headline report/model: `data/rollcall-context-to-idea-evaluation-v4.json` — SHA-256 `e5bdb26713fe8ec8ecec885da89599d41aa3c0a80f1f25b75114a4a120c9ab7c`
-- Updated recent-headline report/model: `data/rollcall-context-to-idea-evaluation-v5.json` — SHA-256 `fccae70aa7610f1b4dd7f4f0f3dafeee93b0ca10ad410cfb5ae2efcc1408acf0`
+- Superseded recent-headline report with date-tie ordering bug: `data/rollcall-context-to-idea-evaluation-v5.json` — SHA-256 `fccae70aa7610f1b4dd7f4f0f3dafeee93b0ca10ad410cfb5ae2efcc1408acf0`
+- Current stable-order model and selection audit: `data/rollcall-context-to-idea-evaluation-v7.json` — SHA-256 `5589eb462e6db386a972393822192b36f449ed88b5668d930442821391b5fd87`
 
 ## Data/review rules
 
