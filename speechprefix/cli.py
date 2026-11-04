@@ -302,6 +302,14 @@ def main(argv: list[str] | None = None) -> int:
     context_idea_classifier.add_argument("--train-fraction", type=float, default=0.8)
     context_idea_classifier.add_argument("--validation-fraction", type=float, default=0.1)
 
+    context_idea_predict = sub.add_parser(
+        "context-idea-predict", help="rank ideas for a later event from a fitted context-classifier artifact"
+    )
+    context_idea_predict.add_argument("--model", required=True, help="evaluation JSON containing the final fitted model")
+    context_idea_predict.add_argument("--snapshot", required=True, help="one target event's preceding-week context snapshot JSON")
+    context_idea_predict.add_argument("--top-k", type=int, default=10)
+    context_idea_predict.add_argument("--output", required=True, help="new immutable prediction JSON")
+
     selective_eval = sub.add_parser(
         "speaker-idea-selective-evaluate",
         help="legacy speaker-history baseline selection; not the active context-to-ideas model",
@@ -994,7 +1002,7 @@ def main(argv: list[str] | None = None) -> int:
             }, ensure_ascii=False, indent=2))
         elif args.command == "context-idea-classifier-evaluate":
             import json
-            from .forecasting.context_to_ideas import evaluate_context_to_idea_classifier
+            from .stages.ideas.model import evaluate_context_to_idea_classifier
 
             result = evaluate_context_to_idea_classifier(
                 args.snapshots, args.events, output_path=args.output,
@@ -1005,6 +1013,27 @@ def main(argv: list[str] | None = None) -> int:
                 "selected_config": result["selected_config"], "test_metrics": result["test_metrics"],
                 "final_fit": result["final_fit"], "report_content_sha256": result["report_content_sha256"],
             }, ensure_ascii=False, indent=2))
+        elif args.command == "context-idea-predict":
+            import json
+            from .stages.ideas.model import predict_context_ideas
+
+            model_artifact = json.loads(Path(args.model).read_text(encoding="utf-8"))
+            snapshot = json.loads(Path(args.snapshot).read_text(encoding="utf-8"))
+            predictions = predict_context_ideas(snapshot, model_artifact, top_k=args.top_k)
+            result = {
+                "schema_version": 1,
+                "artifact_type": "context-to-idea-prediction",
+                "model_report_sha256": model_artifact.get("report_content_sha256"),
+                "event_id": snapshot.get("event_id"),
+                "event_date": snapshot.get("event_date"),
+                "predictions": predictions,
+            }
+            output = Path(args.output)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            with output.open("x", encoding="utf-8") as stream:
+                json.dump(result, stream, ensure_ascii=False, indent=2)
+                stream.write("\n")
+            print(json.dumps({"output": args.output, "prediction_count": len(predictions)}, indent=2))
         elif args.command == "speaker-idea-evaluate":
             import json
             from .speaker_idea_forecast import evaluate_speaker_idea_forecast

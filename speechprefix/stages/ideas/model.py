@@ -15,8 +15,8 @@ from pathlib import Path
 import re
 from typing import Any
 
-from ..context_theme_ranker import read_jsonl
-from ..headline_idea_matching import ISSUE_PHRASE_EXTRACTOR_VERSION, _target_turns, extract_transcript_ideas, issue_phrase_lexicon_sha256
+from ...context_theme_ranker import read_jsonl
+from ...headline_idea_matching import ISSUE_PHRASE_EXTRACTOR_VERSION, _target_turns, extract_transcript_ideas, issue_phrase_lexicon_sha256
 
 _TOKEN = re.compile(r"[a-z][a-z']{1,}")
 _STOP = frozenset("""a an and are as at be been being by for from had has have he her his i in into is it its of on or our she that the their them there they this to was were will with we you your about after all also amid among around because before between both but can could during each even every first following further how however including just more most new not now only other over said says some such than then through today under until very while why would year years breaking latest live news report update watch video trump donald president campaign administration united states us""".split())
@@ -100,14 +100,25 @@ def _predict(model: dict[str, Any], document: set[str]) -> list[tuple[str, float
     return sorted(scores, key=lambda pair: (-pair[1], pair[0]))
 
 
-def _metrics(ranked: list[tuple[str, float]], target: set[str], k: int = 10) -> dict[str, float]:
+def _metrics(
+    ranked: list[tuple[str, float]],
+    target: set[str],
+    *,
+    all_labels: set[str],
+    k: int = 10,
+) -> dict[str, float]:
     predicted = [label for label, _ in ranked[:k]]
     hits = len(set(predicted) & target)
     relevance = [int(label in target) for label in predicted]
     dcg = sum(value / math.log2(i + 2) for i, value in enumerate(relevance))
     ideal = sum(1 / math.log2(i + 2) for i in range(min(k, len(target))))
+    # Score every idea label known before this target, including negatives. A
+    # target idea unseen in training cannot be predicted and is counted as a miss,
+    # not silently removed from the loss denominator.
+    ranked_score = dict(ranked)
     losses = []
-    for label, logit in ranked:
+    for label in sorted(all_labels | target):
+        logit = ranked_score.get(label, -40.0)
         probability = 1.0 / (1.0 + math.exp(-max(-40.0, min(40.0, logit))))
         probability = min(1.0 - 1e-12, max(1e-12, probability))
         outcome = int(label in target)
@@ -117,15 +128,67 @@ def _metrics(ranked: list[tuple[str, float]], target: set[str], k: int = 10) -> 
         "recall_at_10": hits / len(target) if target else 0.0,
         "ndcg_at_10": dcg / ideal if ideal else 0.0,
         "binary_log_loss": sum(losses) / len(losses) if losses else 0.0,
-        "candidate_coverage": len(target & {label for label, _ in ranked}) / len(target) if target else 0.0,
+        "candidate_coverage": len(target & all_labels) / len(target) if target else 0.0,
+        "unseen_target_ideas": float(len(target - all_labels)),
     }
 
 
 def _aggregate(results: list[dict[str, Any]]) -> dict[str, float | int]:
     if not results:
         return {"events": 0}
-    keys = ("precision_at_4", "recall_at_10", "ndcg_at_10", "binary_log_loss", "candidate_coverage")
+    keys = ("precision_at_4", "recall_at_10", "ndcg_at_10", "binary_log_loss", "candidate_coverage", "unseen_target_ideas")
     return {"events": len(results), **{key: sum(row["metrics"][key] for row in results) / len(results) for key in keys}}
+
+
+def predict_context_ideas(snapshot: dict[str, Any], evaluation_artifact: dict[str, Any], *, top_k: int = 10) -> list[dict[str, Any]]:
+    """Predict ranked ideas for a later event from a fitted evaluation artifact.
+
+    The artifact's final fit uses all available paired historical examples. This
+    function accepts only the target event's context snapshot, never its transcript.
+    """
+    if top_k < 1:
+        raise ValueError("top_k must be positive")
+    if evaluation_artifact.get("artifact_type") != "retrospective-context-to-idea-classifier-evaluation":
+        raise ValueError("unsupported fitted-model artifact")
+    final_fit = evaluation_artifact.get("final_model")
+    if not isinstance(final_fit, dict) or not isinstance(final_fit.get("model"), dict):
+        raise ValueError("evaluation artifact does not contain a fitted model")
+    expected_model_hash = evaluation_artifact.get("final_fit", {}).get("model_sha256")
+    actual_model_hash = hashlib.sha256(
+        json.dumps(final_fit["model"], sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    if actual_model_hash != expected_model_hash:
+        raise ValueError("fitted model hash mismatch")
+    expected_report_hash = evaluation_artifact.get("report_content_sha256")
+    report_without_hash = dict(evaluation_artifact)
+    report_without_hash.pop("report_content_sha256", None)
+    actual_report_hash = hashlib.sha256(
+        json.dumps(report_without_hash, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    if actual_report_hash != expected_report_hash:
+        raise ValueError("evaluation artifact hash mismatch")
+    try:
+        event_day = date.fromisoformat(snapshot.get("event_date", ""))
+        trained_through = date.fromisoformat(final_fit["trained_through"])
+    except (TypeError, ValueError, KeyError):
+        raise ValueError("invalid prediction or training cutoff date") from None
+    if event_day <= trained_through:
+        raise ValueError("prediction event must be strictly later than the final training event")
+    if snapshot.get("exploratory_only") is not True:
+        raise ValueError("prediction snapshot must declare exploratory_only=true")
+    for source in snapshot.get("candidate_sources", []):
+        try:
+            published = date.fromisoformat(str(source.get("published_at", ""))[:10])
+        except (TypeError, ValueError):
+            continue
+        if published >= event_day:
+            raise ValueError("same-day/future headline in prediction snapshot")
+    temperature = float(final_fit["temperature"])
+    ranked = _predict(final_fit["model"], _features(snapshot))
+    return [
+        {"rank": index, "idea_id": label, "score": round(score / temperature, 6), "score_type": "uncalibrated_logit"}
+        for index, (label, score) in enumerate(ranked[:top_k], 1)
+    ]
 
 
 def evaluate_context_to_idea_classifier(
@@ -179,17 +242,34 @@ def evaluate_context_to_idea_classifier(
     train = [row for row in examples if row["date"] in train_dates]
     validation = [row for row in examples if row["date"] in val_dates]
     test = [row for row in examples if row["date"] in test_dates]
-    config_grid = [{"alpha": alpha, "min_df": min_df} for alpha in (0.25, 0.5, 1.0, 2.0, 4.0) for min_df in (1, 2, 3)]
+    config_grid = [
+        {"alpha": alpha, "min_df": min_df, "temperature": temperature}
+        for alpha in (0.25, 0.5, 1.0, 2.0, 4.0)
+        for min_df in (1, 2, 3)
+        for temperature in (1.0, 2.0, 4.0, 8.0, 16.0, 32.0)
+    ]
     validation_rows = []
     for config in config_grid:
-        model = _fit([row["document"] for row in train], [row["targets"] for row in train], **config)
-        result = [_metrics(_predict(model, row["document"]), row["targets"]) for row in validation]
+        model = _fit(
+            [row["document"] for row in train], [row["targets"] for row in train],
+            alpha=config["alpha"], min_df=config["min_df"],
+        )
+        validation_labels = set(model["models"])
+        result = [
+            _metrics(
+                [(label, score / config["temperature"]) for label, score in _predict(model, row["document"])],
+                row["targets"], all_labels=validation_labels,
+            )
+            for row in validation
+        ]
         validation_rows.append({"config": config, "metrics": _aggregate([{"metrics": item} for item in result])})
     selected = min(validation_rows, key=lambda row: (
         row["metrics"].get("binary_log_loss", float("inf")),
         -row["metrics"].get("ndcg_at_10", 0.0),
     ))
     model_config = selected["config"]
+    model_fit_config = {key: model_config[key] for key in ("alpha", "min_df")}
+    temperature = model_config["temperature"]
     # Refit on all pre-test examples; the test predictions remain chronological.
     # Incremental walk-forward refit: each target is scored only from examples dated earlier.
     test_rows = []
@@ -197,9 +277,9 @@ def evaluate_context_to_idea_classifier(
         history = [row for row in train + validation + test if row["date"] < target["date"]]
         if not history:
             continue
-        model_at_date = _fit([row["document"] for row in history], [row["targets"] for row in history], **model_config)
-        ranking = _predict(model_at_date, target["document"])
-        metrics = _metrics(ranking, target["targets"])
+        model_at_date = _fit([row["document"] for row in history], [row["targets"] for row in history], **model_fit_config)
+        ranking = [(label, score / temperature) for label, score in _predict(model_at_date, target["document"])]
+        metrics = _metrics(ranking, target["targets"], all_labels=set(model_at_date["models"]))
         test_rows.append({
             "event_id": target["event_id"], "event_date": target["date"].isoformat(),
             "retrieval_profile": target["profile"], "headline_count": target["source_count"],
@@ -222,8 +302,8 @@ def evaluate_context_to_idea_classifier(
             ranked.append((label, math.log((positive + 1) / (negative + 1))))
         ranked.sort(key=lambda pair: (-pair[1], pair[0]))
         baseline_rows.append({"event_id": target["event_id"], "event_date": target["date"].isoformat(),
-                              "metrics": _metrics(ranked, target["targets"])})
-    final_model = _fit([row["document"] for row in examples], [row["targets"] for row in examples], **model_config)
+                              "metrics": _metrics(ranked, target["targets"], all_labels=set(vocabulary))})
+    final_model = _fit([row["document"] for row in examples], [row["targets"] for row in examples], **model_fit_config)
     report: dict[str, Any] = {
         "schema_version": 1, "artifact_type": "retrospective-context-to-idea-classifier-evaluation",
         "model_version": "bernoulli-headline-issue-classifier-v1",
@@ -238,14 +318,19 @@ def evaluate_context_to_idea_classifier(
         "example_count": len(examples), "skipped_snapshot_count": len(snapshots)-len(examples),
         "split": {"train_event_ids":[row["event_id"] for row in train],"validation_event_ids":[row["event_id"] for row in validation],"test_event_ids":[row["event_id"] for row in test],
                   "train_dates":[min(train_dates).isoformat(),max(train_dates).isoformat()],"validation_dates":[min(val_dates).isoformat(),max(val_dates).isoformat()],"test_dates":[min(test_dates).isoformat(),max(test_dates).isoformat()]},
-        "selection_policy": "select alpha and minimum headline document frequency by mean validation binary log loss over the training-label candidate vocabulary; break ties by nDCG@10; refit for each target using earlier examples only",
+        "selection_policy": "select Bernoulli smoothing, minimum headline document frequency, and logit temperature by mean validation binary log loss over labels known from earlier training events; target labels unseen in training are explicit misses with probability floor 1e-12; break ties by nDCG@10; refit for each target using earlier examples only",
+        "loss_definition": "mean binary cross-entropy across idea IDs observed in training before each target; known negatives are included and target ideas absent from that training vocabulary receive the clipped probability floor, so novel ideas are penalized rather than omitted from the loss denominator",
         "validation_grid": validation_rows, "selected_config": model_config,
         "test_metrics": {"headline_conditioned_classifier": _aggregate(test_rows), "training_label_prevalence_reference": _aggregate(baseline_rows)},
         "test_predictions": test_rows,
         "final_fit": {"fit_event_count":len(examples),"training_target_label_count":sum(len(row["targets"]) for row in examples),
                        "candidate_label_count":len(final_model["models"]),"vocabulary_size":len(final_model["vocabulary"]),
                        "model_sha256":hashlib.sha256(json.dumps(final_model,sort_keys=True,separators=(",",":")).encode()).hexdigest()},
+        "final_model": {"trained_through":max(row["date"] for row in examples).isoformat(),
+                        "temperature":temperature,"model":final_model},
         "limitations": ["Only 38 dated context/speech pairs are available in the merged snapshot set; chronological test results are tiny and unstable.",
+                        "Binary loss is defined over labels observed in earlier training events; unseen target ideas are explicitly penalized at the clipped probability floor, but the incomplete phrase ontology still limits interpretation.",
+                        "Binary loss is defined over labels observed in earlier training events; unseen target ideas are explicitly penalized at the clipped probability floor, but the incomplete phrase ontology still limits interpretation.",
                         "The historical Google News snapshots were retrieved after the target speeches, so timing/availability is unverified.",
                         "The prediction labels are a compact lexical extractor and omit many valid ideas or paraphrases.",
                         "Training labels from earlier speeches are supervision only; prior speech text or idea frequency is never supplied as a target-event predictor feature.",
