@@ -13,25 +13,27 @@ The target transcript is read for labels/scoring only. It must not enter its own
 
 - Order examples by event date; keep all same-day events in one partition and one history boundary.
 - Use earliest dates for training, the next chronological block for validation, and later dates for development/backtest scoring. The current corpus is small and repeatedly inspected; all scores are development results.
-- Fit feature vocabularies and model parameters on training examples only. Select hyperparameters by validation binary log loss; report held-out binary log loss plus P@4, recall@10, nDCG@10, candidate coverage, and per-event prediction/miss lists.
+- Fit feature vocabularies and model parameters on training examples only. Select Bernoulli smoothing, minimum feature frequency, and logit temperature by validation binary log loss; report chronological held-out binary log loss plus P@4, recall@10, nDCG@10, candidate coverage, unseen target ideas, and per-event prediction/miss lists.
+- Binary loss covers labels observed before each target. Known negative labels are included; target labels unseen in training are explicitly scored at the clipped floor (1e-12), not dropped from the denominator. The label inventory is still incomplete, so this is loss against a weak phrase ontology.
 - Refit using all available eligible historical pairs for the final model. Do not call in-sample fit loss a backtest score.
 - Compare against simple no-context prevalence as a reference, but do not feed its score/features into the context model.
 
 ## Current result
 
-The current frozen snapshot union has 38 unique events; 32 have at least one extracted label. The chronological split has 24 train, 4 validation, and 4 development events. Validation chose Bernoulli Naive Bayes `alpha=2.0`, `min_df=1` by binary log loss. On the four-event development slice:
+The current frozen snapshot union has 38 unique events; 32 have at least one extracted label. The chronological split has 24 train, 4 validation, and 4 development events. Validation chose Bernoulli Naive Bayes `alpha=4.0`, `min_df=3`, and logit temperature `32.0` by binary log loss. On the four-event development slice:
 
 | System | Binary log loss | nDCG@10 | P@4 | Recall@10 |
 |---|---:|---:|---:|---:|
-| Preceding-week headline classifier | 3.357 | 0.428 | 0.500 | 0.315 |
-| No-context prevalence reference | 0.324 | 0.439 | 0.563 | 0.315 |
+| Preceding-week headline classifier | 0.635 | 0.398 | 0.313 | 0.340 |
+| No-context prevalence reference | 0.562 | 0.439 | 0.563 | 0.315 |
 
-The learned classifier is substantially overconfident and does not beat the reference. This is a failed first baseline, not evidence that context is unhelpful: four events, sparse labels, and highly retrospective retrieval make this comparison extremely uncertain.
+The validation-selected temperature reduces the first model's extreme overconfidence, but headline features still lose to the no-context reference on log loss, nDCG@10, and P@4; recall@10 is marginally higher. Three quarters of target phrases on this tiny slice are unseen in the preceding training labels. This is not a successful model claim: four events, sparse/incomplete labels, and retrospective retrieval make the comparison highly uncertain.
 
 Ignored local artifacts:
 
 - Combined inputs: `data/rollcall-context-snapshots-retro-combined-v1.jsonl`, SHA-256 `96e94152e3b9318dbe8ab34dc28fd0d3a8f8718fa6f0ed5316cb143d43f33314`.
-- Report: `data/rollcall-context-to-idea-evaluation-v3.json`, SHA-256 `4f8c44f012ba34c005ffb59f27a99c2ba29391deb760150f95081e9e27accb7d`.
+- Earlier report (pre-loss correction): `data/rollcall-context-to-idea-evaluation-v3.json`, SHA-256 `4f8c44f012ba34c005ffb59f27a99c2ba29391deb760150f95081e9e27accb7d`.
+- Updated report plus serialized final-fit predictor: `data/rollcall-context-to-idea-evaluation-v4.json`, SHA-256 `e5bdb26713fe8ec8ecec885da89599d41aa3c0a80f1f25b75114a4a120c9ab7c`. This is the usable fitted artifact; it contains the final all-pairs refit and must only be applied to events after its training cutoff.
 
 ## Limitations
 

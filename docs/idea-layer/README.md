@@ -17,9 +17,9 @@ The transcript is the realized outcome, not a feature. For event `i`, never use 
 
 ## Active code and command
 
-- Model/evaluation: `speechprefix/forecasting/context_to_ideas.py`
+- Model/evaluation: `speechprefix/stages/ideas/model.py`
 - Shared target extraction: `speechprefix/headline_idea_matching.py`
-- CLI: `context-idea-classifier-evaluate`
+- CLI: `context-idea-classifier-evaluate` (evaluate/tune) and `context-idea-predict` (rank ideas for a strictly later event from a fitted artifact)
 - Tests: `tests/test_forecasting_context_to_ideas.py`
 
 Run the frozen historical context experiment with a new output path:
@@ -31,20 +31,21 @@ uv run python -m speechprefix context-idea-classifier-evaluate \
   --output data/rollcall-context-to-idea-evaluation-NEW.json
 ```
 
-The classifier uses headline-title unigram/bigram features and a Bernoulli Naive Bayes multi-label model. It selects smoothing and feature-frequency settings by validation binary log loss. Evaluation reports binary log loss, ranking quality, candidate coverage, and per-event predictions. A no-context issue-prevalence reference is reported separately and is not an input to the model.
+The classifier uses headline-title unigram/bigram features and a Bernoulli Naive Bayes multi-label model. It selects smoothing, feature-frequency settings, and logit temperature by validation binary log loss. Evaluation reports binary log loss (including explicit penalties for labels unseen in earlier training), ranking quality, candidate coverage, and per-event predictions. A no-context issue-prevalence reference is reported separately and is not an input to the model. The evaluation artifact contains a final refit and is accepted by `context-idea-predict`, which rejects target dates at or before the training cutoff and verifies artifact hashes.
 
 ## Available historical data and current result
 
-The current frozen context union contains 20 topic-family snapshots plus 18 separately collected news snapshots (38 unique events total). Six have no target phrases under the current extractor; 32 are usable. The fixed chronological split is 24 training, 4 validation, and 4 development events. The latest run selected `alpha=2.0`, `min_df=1`.
+The current frozen context union contains 20 topic-family snapshots plus 18 separately collected news snapshots (38 unique events total). Six have no target phrases under the current extractor; 32 are usable. The fixed chronological split is 24 training, 4 validation, and 4 development events. The corrected loss/tuning run selected `alpha=4.0`, `min_df=3`, temperature `32.0`.
 
-On the four development events, the headline classifier scored binary log loss **3.357**, nDCG@10 **0.428**, P@4 **0.500**, and recall@10 **0.315**. The no-context prevalence reference scored **0.324**, **0.439**, **0.563**, and **0.315** respectively. The classifier is overconfident and does not beat this simple reference. This is a negative first result, not proof that context cannot work.
+On the four development events, the headline classifier scored binary log loss **0.635**, nDCG@10 **0.398**, P@4 **0.313**, and recall@10 **0.340**. The no-context prevalence reference scored **0.562**, **0.439**, **0.563**, and **0.315** respectively. The classifier still loses on loss and two ranking metrics; the small recall difference is not persuasive. This is a negative first result, not proof that context cannot work.
 
 All 38 snapshots were retrieved after their target speeches. Feed publication dates earlier than an event do not establish that the stories or search results were available then. The development sample is tiny; the target labels are incomplete lexical phrase extractions. These figures are retrospective tuning diagnostics, not semantic accuracy or independent test performance.
 
 Artifacts are local and Git-ignored:
 
 - `data/rollcall-context-snapshots-retro-combined-v1.jsonl` — SHA-256 `96e94152e3b9318dbe8ab34dc28fd0d3a8f8718fa6f0ed5316cb143d43f33314`
-- `data/rollcall-context-to-idea-evaluation-v3.json` — SHA-256 `4f8c44f012ba34c005ffb59f27a99c2ba29391deb760150f95081e9e27accb7d`
+- Earlier pre-loss-correction report: `data/rollcall-context-to-idea-evaluation-v3.json` — SHA-256 `4f8c44f012ba34c005ffb59f27a99c2ba29391deb760150f95081e9e27accb7d`
+- Corrected report and serialized final model: `data/rollcall-context-to-idea-evaluation-v4.json` — SHA-256 `e5bdb26713fe8ec8ecec885da89599d41aa3c0a80f1f25b75114a4a120c9ab7c`
 
 ## Data/review rules
 
