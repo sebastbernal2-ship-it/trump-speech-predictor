@@ -14,12 +14,14 @@ class ContextIssueClassifierTests(unittest.TestCase):
             "candidate_sources": [
                 {"title": "Tariff policy - Reuters", "publisher": "Reuters", "published_at": "2024-01-09"},
                 {"title": "Tariff policy - Reuters", "publisher": "Reuters", "published_at": "2024-01-08"},
+                {"title": "War and peace - Associated Press", "publisher": "Associated Press", "published_at": "2024-01-09"},
                 {"title": "Ukraine energy - Associated Press", "publisher": "Associated Press", "published_at": "2024-01-10"},
             ],
         }
         features = _features(snapshot, headline_limit=1)
         self.assertIn("u:tariff", features)
         self.assertNotIn("u:reuters", features)
+        self.assertNotIn("u:war", features)  # date ties preserve captured order
         self.assertNotIn("u:ukraine", features)  # same-day source is excluded
 
     def test_unseen_target_ideas_are_penalized_in_binary_loss(self):
