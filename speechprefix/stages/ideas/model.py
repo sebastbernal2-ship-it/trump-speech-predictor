@@ -22,7 +22,7 @@ _TOKEN = re.compile(r"[a-z][a-z']{1,}")
 _STOP = frozenset("""a an and are as at be been being by for from had has have he her his i in into is it its of on or our she that the their them there they this to was were will with we you your about after all also amid among around because before between both but can could during each even every first following further how however including just more most new not now only other over said says some such than then through today under until very while why would year years breaking latest live news report update watch video trump donald president campaign administration united states us""".split())
 
 
-def _features(snapshot: dict[str, Any]) -> set[str]:
+def _features(snapshot: dict[str, Any], *, headline_limit: int | None = None) -> set[str]:
     sources = snapshot.get("candidate_sources")
     if not isinstance(sources, list):
         raise ValueError(f"{snapshot.get('event_id')}: candidate_sources must be a list")
@@ -31,7 +31,8 @@ def _features(snapshot: dict[str, Any]) -> set[str]:
     except (TypeError, ValueError):
         raise ValueError(f"{snapshot.get('event_id')}: invalid event_date") from None
     lookback_start = event_day.fromordinal(event_day.toordinal() - 7)
-    tokens: set[str] = set()
+    eligible: list[tuple[date, str]] = []
+    seen_titles: set[str] = set()
     for source in sources:
         title = source.get("title") if isinstance(source, dict) else None
         if not isinstance(title, str):
@@ -42,6 +43,23 @@ def _features(snapshot: dict[str, Any]) -> set[str]:
             continue
         if not lookback_start <= published_day < event_day:
             continue
+        publisher = source.get("publisher")
+        if isinstance(publisher, str) and publisher.strip():
+            for separator in (" - ", " — ", " | "):
+                suffix = separator + publisher.strip()
+                if title.casefold().endswith(suffix.casefold()):
+                    title = title[:-len(suffix)].strip()
+                    break
+        normalized_title = " ".join(title.casefold().split())
+        if not normalized_title or normalized_title in seen_titles:
+            continue
+        seen_titles.add(normalized_title)
+        eligible.append((published_day, title))
+    eligible.sort(key=lambda row: (row[0], row[1].casefold()), reverse=True)
+    if headline_limit is not None:
+        eligible = eligible[:headline_limit]
+    tokens: set[str] = set()
+    for _, title in eligible:
         words = [word for word in _TOKEN.findall(title.casefold()) if word not in _STOP]
         tokens.update("u:" + word for word in words)
         tokens.update("b:" + left + "_" + right for left, right in zip(words, words[1:]))
@@ -133,6 +151,17 @@ def _metrics(
     }
 
 
+def _label_names(examples: list[dict[str, Any]]) -> dict[str, str]:
+    names: dict[str, Counter[str]] = {}
+    for example in examples:
+        for idea in example.get("target_ideas", []):
+            idea_id = idea.get("idea_id")
+            name = idea.get("candidate_idea")
+            if isinstance(idea_id, str) and isinstance(name, str) and name.strip():
+                names.setdefault(idea_id, Counter())[name.strip()] += int(idea.get("occurrence_count", 1))
+    return {idea_id: counts.most_common(1)[0][0] for idea_id, counts in names.items()}
+
+
 def _aggregate(results: list[dict[str, Any]]) -> dict[str, float | int]:
     if not results:
         return {"events": 0}
@@ -184,9 +213,14 @@ def predict_context_ideas(snapshot: dict[str, Any], evaluation_artifact: dict[st
         if published >= event_day:
             raise ValueError("same-day/future headline in prediction snapshot")
     temperature = float(final_fit["temperature"])
-    ranked = _predict(final_fit["model"], _features(snapshot))
+    ranked = _predict(
+        final_fit["model"],
+        _features(snapshot, headline_limit=final_fit.get("headline_limit")),
+    )
+    label_names = final_fit["model"].get("label_names", {})
     return [
-        {"rank": index, "idea_id": label, "score": round(score / temperature, 6), "score_type": "uncalibrated_logit"}
+        {"rank": index, "idea_id": label, "idea": label_names.get(label, label),
+         "score": round(score / temperature, 6), "score_type": "uncalibrated_logit"}
         for index, (label, score) in enumerate(ranked[:top_k], 1)
     ]
 
@@ -243,21 +277,25 @@ def evaluate_context_to_idea_classifier(
     validation = [row for row in examples if row["date"] in val_dates]
     test = [row for row in examples if row["date"] in test_dates]
     config_grid = [
-        {"alpha": alpha, "min_df": min_df, "temperature": temperature}
-        for alpha in (0.25, 0.5, 1.0, 2.0, 4.0)
-        for min_df in (1, 2, 3)
-        for temperature in (1.0, 2.0, 4.0, 8.0, 16.0, 32.0)
+        {"alpha": alpha, "min_df": min_df, "headline_limit": headline_limit, "temperature": temperature}
+        for alpha in (0.5, 4.0)
+        for min_df in (1, 3)
+        for headline_limit in (20, 50, None)
+        for temperature in (1.0, 8.0, 32.0)
     ]
     validation_rows = []
     for config in config_grid:
         model = _fit(
-            [row["document"] for row in train], [row["targets"] for row in train],
+            [_features(snap_by_id[row["event_id"]], headline_limit=config["headline_limit"]) for row in train],
+            [row["targets"] for row in train],
             alpha=config["alpha"], min_df=config["min_df"],
         )
         validation_labels = set(model["models"])
         result = [
             _metrics(
-                [(label, score / config["temperature"]) for label, score in _predict(model, row["document"])],
+                [(label, score / config["temperature"]) for label, score in _predict(
+                    model, _features(snap_by_id[row["event_id"]], headline_limit=config["headline_limit"])
+                )],
                 row["targets"], all_labels=validation_labels,
             )
             for row in validation
@@ -270,6 +308,7 @@ def evaluate_context_to_idea_classifier(
     model_config = selected["config"]
     model_fit_config = {key: model_config[key] for key in ("alpha", "min_df")}
     temperature = model_config["temperature"]
+    headline_limit = model_config["headline_limit"]
     # Refit on all pre-test examples; the test predictions remain chronological.
     # Incremental walk-forward refit: each target is scored only from examples dated earlier.
     test_rows = []
@@ -277,15 +316,20 @@ def evaluate_context_to_idea_classifier(
         history = [row for row in train + validation + test if row["date"] < target["date"]]
         if not history:
             continue
-        model_at_date = _fit([row["document"] for row in history], [row["targets"] for row in history], **model_fit_config)
-        ranking = [(label, score / temperature) for label, score in _predict(model_at_date, target["document"])]
+        model_at_date = _fit(
+            [_features(snap_by_id[row["event_id"]], headline_limit=headline_limit) for row in history],
+            [row["targets"] for row in history], **model_fit_config,
+        )
+        ranking = [(label, score / temperature) for label, score in _predict(model_at_date, _features(snap_by_id[target["event_id"]], headline_limit=headline_limit))]
         metrics = _metrics(ranking, target["targets"], all_labels=set(model_at_date["models"]))
         test_rows.append({
             "event_id": target["event_id"], "event_date": target["date"].isoformat(),
             "retrieval_profile": target["profile"], "headline_count": target["source_count"],
             "target_idea_count": len(target["targets"]), "metrics": metrics,
             "target_ideas": sorted(target["targets"]),
-            "top_10_predictions": [{"rank": rank, "idea_id": label, "score": round(score, 6),
+            "top_10_predictions": [{"rank": rank, "idea_id": label,
+                                   "idea": _label_names(history).get(label, label),
+                                   "score": round(score, 6),
                                    "matched_target": label in target["targets"]}
                                   for rank, (label, score) in enumerate(ranking[:10], 1)],
         })
@@ -303,12 +347,16 @@ def evaluate_context_to_idea_classifier(
         ranked.sort(key=lambda pair: (-pair[1], pair[0]))
         baseline_rows.append({"event_id": target["event_id"], "event_date": target["date"].isoformat(),
                               "metrics": _metrics(ranked, target["targets"], all_labels=set(vocabulary))})
-    final_model = _fit([row["document"] for row in examples], [row["targets"] for row in examples], **model_fit_config)
+    final_model = _fit(
+        [_features(snap_by_id[row["event_id"]], headline_limit=headline_limit) for row in examples],
+        [row["targets"] for row in examples], **model_fit_config,
+    )
+    final_model["label_names"] = _label_names(examples)
     report: dict[str, Any] = {
         "schema_version": 1, "artifact_type": "retrospective-context-to-idea-classifier-evaluation",
         "model_version": "bernoulli-headline-issue-classifier-v1",
         "task": "predict target-speech issue-phrase labels from dated news headlines published during the seven days before the target event; select the supervised model by binary cross-entropy loss then rank quality",
-        "features": "headline title unigram/bigram presence from event_date minus 7 days through the day before event_date; no target transcript, prior speech text, event-title metadata, future context, or history count is an inference feature",
+        "features": "headline title unigram/bigram presence from deduplicated, publisher-suffix-stripped titles in the preceding seven days; validation selects a cap on the most recent headlines. No target transcript, prior speech text, event-title metadata, future context, or history count is an inference feature",
         "supervised_training": "earlier examples use their own preceding-week context headlines as features and their own transcript-derived ideas as labels; only examples earlier than each scored event are fit",
         "target_policy": "compact transcript-extracted lexical issue phrases; weak, incomplete labels rather than semantic gold",
         "context_availability": "snapshots were retrieved retrospectively; feed publication dates do not establish actual pre-event availability",
@@ -327,7 +375,7 @@ def evaluate_context_to_idea_classifier(
                        "candidate_label_count":len(final_model["models"]),"vocabulary_size":len(final_model["vocabulary"]),
                        "model_sha256":hashlib.sha256(json.dumps(final_model,sort_keys=True,separators=(",",":")).encode()).hexdigest()},
         "final_model": {"trained_through":max(row["date"] for row in examples).isoformat(),
-                        "temperature":temperature,"model":final_model},
+                        "temperature":temperature,"headline_limit":headline_limit,"model":final_model},
         "limitations": ["Only 38 dated context/speech pairs are available in the merged snapshot set; chronological test results are tiny and unstable.",
                         "Binary loss is defined over labels observed in earlier training events; unseen target ideas are explicitly penalized at the clipped probability floor, but the incomplete phrase ontology still limits interpretation.",
                         "Binary loss is defined over labels observed in earlier training events; unseen target ideas are explicitly penalized at the clipped probability floor, but the incomplete phrase ontology still limits interpretation.",
