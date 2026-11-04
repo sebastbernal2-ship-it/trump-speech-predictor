@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def _markdown_files() -> list[Path]:
     return [
         *Path(ROOT / "docs").rglob("*.md"),
+        *Path(ROOT / "speechprefix/stages").rglob("*.md"),
+        *Path(ROOT / "speechprefix/pipelines").rglob("*.md"),
         ROOT / "README.md",
         ROOT / "CONTEXT.md",
         ROOT / "AGENTS.md",
@@ -42,6 +44,15 @@ def test_canonical_task_and_package_description_stay_aligned() -> None:
     description = metadata["project"]["description"].lower()
     assert "preceding-week news context" in description
     assert "continuation" not in description
+
+
+def test_future_stage_scaffolds_exist_without_claiming_implementation() -> None:
+    ideas = (ROOT / "speechprefix/stages/ideas/README.md").read_text(encoding="utf-8").lower()
+    sentences = (ROOT / "speechprefix/stages/sentences/README.md").read_text(encoding="utf-8").lower()
+    pipelines = (ROOT / "speechprefix/pipelines/README.md").read_text(encoding="utf-8").lower()
+    assert "implementation has not yet been migrated" in ideas
+    assert "no sentence model" in sentences
+    assert "no end-to-end pipeline is implemented" in pipelines
 
 
 def test_cli_marks_history_forecasters_as_legacy() -> None:
