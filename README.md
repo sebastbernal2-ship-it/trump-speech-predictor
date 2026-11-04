@@ -6,9 +6,9 @@ The model input for a target event is that event's preceding-week context. Its t
 
 ## Current implementation
 
-- `speechprefix/forecasting/context_to_ideas.py`: supervised Bernoulli headline-to-idea classifier. Features are title unigrams/bigrams from the seven days before an event; labels are compact issue phrases extracted from its target-speaker transcript.
-- CLI: `context-idea-classifier-evaluate`. It uses chronological event-date splits, chooses smoothing settings by validation binary log loss, and reports log loss, ranking metrics, candidate coverage, and per-event predictions.
-- Current historical input: 38 unique retrospective snapshots (20 topic-family snapshots and 18 news snapshots); 32 produce extractable target labels. The four-event development slice did **not** beat the no-context prevalence reference and showed severe overconfidence. This is a weak initial baseline, not a successful model.
+- `speechprefix/stages/ideas/model.py`: supervised Bernoulli headline-to-idea classifier. Features are title unigrams/bigrams from the seven days before an event; labels are compact issue phrases extracted from its target-speaker transcript.
+- CLI: `context-idea-classifier-evaluate` tunes/backtests; `context-idea-predict` applies its serialized final fit to a strictly later context snapshot. Validation selects smoothing, feature frequency, and logit temperature by binary log loss; reported scores remain uncalibrated.
+- Current historical input: 38 unique retrospective snapshots; 32 produce extractable target labels. On the four-event development slice the model still loses to the no-context reference on binary loss, nDCG@10, and P@4. It is a runnable first model, **not a demonstrated successful forecaster**.
 - News snapshots were retrieved after their target speeches. Their feed dates are historical evidence for a retrospective experiment, not proof of point-in-time availability. The speech idea labels are also incomplete lexical proxies, not semantic ground truth.
 
 Full task definition and current experiment: [`docs/idea-layer/README.md`](docs/idea-layer/README.md). Data caveats: [`docs/data-audit.md`](docs/data-audit.md). AI-only transcript review policy: [`docs/idea-layer/ai-review-policy.md`](docs/idea-layer/ai-review-policy.md).
@@ -23,12 +23,12 @@ uv run python -m speechprefix context-idea-classifier-evaluate \
   --output data/rollcall-context-to-idea-evaluation-NEW.json
 ```
 
-Reports and local collected corpora must remain Git-ignored and immutable; use a new output name for every run. Frozen input and report hashes are recorded in [`docs/idea-layer/README.md`](docs/idea-layer/README.md).
+Reports and local collected corpora must remain Git-ignored and immutable; use a new output name for every run. Frozen input and model-report hashes are recorded in [`docs/idea-layer/README.md`](docs/idea-layer/README.md). To apply the fitted model to a strictly later snapshot, run `uv run python -m speechprefix context-idea-predict --model data/rollcall-context-to-idea-evaluation-v4.json --snapshot <later-snapshot.json> --output data/idea-prediction-NEW.json`. The predictor rejects same/earlier event dates and same-day/future headlines.
 
 ## Repository map
 
-- `speechprefix/forecasting/`: current active context-to-ideas implementation (migration into `speechprefix/stages/ideas/` is pending).
-- `speechprefix/stages/`: explicit ideas and future sentence-stage package scaffolds; see `docs/architecture.md` for status.
+- `speechprefix/stages/ideas/`: active supervised context-to-ideas model, evaluation, and prediction API.
+- `speechprefix/stages/sentences/`: reserved future-stage scaffold; no model implementation yet.
 - `speechprefix/pipelines/`: reserved for future orchestration; no end-to-end pipeline exists yet.
 - `speechprefix/`: shared transcript parsing, issue-target extraction, CLI, and legacy research prototypes.
 - `tests/`: unit and synthetic-fixture tests.

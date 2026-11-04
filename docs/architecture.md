@@ -15,16 +15,16 @@ Training examples are chronological pairs `(pre-event context, realized transcri
 
 Active implementation:
 
-- `speechprefix/forecasting/context_to_ideas.py`: feature construction, Bernoulli Naive Bayes fitting/prediction, validation search, and chronological backtest. The evaluator reports a hash of a final refit; it does not serialize a deployable model.
+- `speechprefix/stages/ideas/model.py`: feature construction, Bernoulli Naive Bayes fitting/prediction, validation search, and chronological backtest. The evaluator serializes the all-pairs final refit in its immutable JSON report. `predict_context_ideas` and the `context-idea-predict` CLI apply it only to event dates strictly later than its training cutoff, and verify both report/model hashes.
 - `speechprefix/headline_idea_matching.py`: target-speaker filtering and current compact issue-phrase labels.
-- `speechprefix/cli.py`: `context-idea-classifier-evaluate` command.
+- `speechprefix/cli.py`: `context-idea-classifier-evaluate` and `context-idea-predict` commands.
 - `tests/test_forecasting_context_to_ideas.py`: synthetic cutoff, chronological split, and immutable-output checks.
 
-## Planned multi-stage layout
+## Other stage boundaries
 
-The stage boundaries are scaffolded now so future work has a designated home:
+The remaining stage boundaries are scaffolded so future work has a designated home:
 
-- [`speechprefix/stages/ideas/README.md`](../speechprefix/stages/ideas/README.md): intended home for the active ideas predictor. **The implementation has not yet been migrated** from `speechprefix/forecasting/`.
+- [`speechprefix/stages/ideas/README.md`](../speechprefix/stages/ideas/README.md): active home for the supervised idea predictor.
 - [`speechprefix/stages/sentences/README.md`](../speechprefix/stages/sentences/README.md): reserved for a future sentence-level model. It is intentionally empty of model code until its contract and evaluation are defined.
 - [`speechprefix/pipelines/README.md`](../speechprefix/pipelines/README.md): reserved for orchestration across stages; no end-to-end pipeline exists yet.
 
