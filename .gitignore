@@ -1,4 +1,5 @@
 __pycache__/
+.pytest_cache/
 *.py[cod]
 .venv/
 venv/
@@ -30,6 +31,15 @@ data/rollcall-context-snapshots-*.jsonl
 data/rollcall-theme-family-drafts-*.jsonl
 data/rollcall-context-theme-evaluation-*.json
 data/rollcall-context-theme-case-replay-*.json
+data/rollcall-assistant-reviewed-outcomes-*.jsonl
+data/rollcall-assistant-outcomes-*.jsonl
+data/rollcall-assistant-history-targets-*.jsonl
+data/rollcall-assistant-history-forecast-*.json
+data/rollcall-assistant-history-match-*.jsonl
+data/rollcall-assistant-history-agreement-*.json
+data/rollcall-assistant-history-protocol-*.md
+data/rollcall-assistant-history-news-*.jsonl
+data/rollcall-assistant-history-news-*.json
 data/rollcall-context-candidate-evaluation-*.json
 data/rollcall-context-snapshot-audit-*.json
 data/rollcall-context-prospective-*.json
@@ -48,6 +58,8 @@ data/rollcall-context-idea-evaluation-*.json
 data/rollcall-context-issue-forecast-*.json
 data/rollcall-context-issue-evaluation-*.json
 data/rollcall-speaker-idea-evaluation-*.json
+data/rollcall-speaker-idea-event-evaluation-*.json
+data/rollcall-context-to-idea-evaluation-*.json
 data/rollcall-speaker-idea-selective-evaluation-*.json
 data/rollcall-speaker-idea-forecast-*.json
 data/idea-layer/

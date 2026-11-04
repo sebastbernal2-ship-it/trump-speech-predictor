@@ -14,13 +14,26 @@ from .contracts import (
     validate_pre_speech_forecast,
     validate_source_evidence,
 )
+from .ablation import derive_source_ablation
 from .ledger import append_source_items, append_source_records, freeze_idea_input_snapshot, read_source_ledger
 from .news import retrieve_google_news_evidence
 from .posts import load_trump_post_export, normalize_trump_post_export
 from .ranker import make_idea_proposal_set, rank_pre_speech_ideas, seal_idea_proposal_set, validate_idea_proposal_set
+from .semantic_forecast_bundle import build_semantic_forecast_evaluation_bundle
+from .semantic_forecast import (
+    build_semantic_prompt,
+    build_semantic_proposal_set,
+    rank_semantic_idea_proposals,
+    validate_semantic_prompt,
+    validate_semantic_proposal_set,
+)
 
 __all__ = [
     "append_source_items",
+    "build_semantic_prompt",
+    "build_semantic_proposal_set",
+    "build_semantic_forecast_evaluation_bundle",
+    "derive_source_ablation",
     "append_source_records",
     "freeze_idea_input_snapshot",
     "is_source_eligible_at",
@@ -29,6 +42,7 @@ __all__ = [
     "normalize_trump_post_export",
     "read_source_ledger",
     "rank_pre_speech_ideas",
+    "rank_semantic_idea_proposals",
     "seal_pre_speech_forecast",
     "seal_idea_proposal_set",
     "retrieve_google_news_evidence",
@@ -37,5 +51,7 @@ __all__ = [
     "validate_idea_proposal_set",
     "validate_idea_update",
     "validate_pre_speech_forecast",
+    "validate_semantic_prompt",
+    "validate_semantic_proposal_set",
     "validate_source_evidence",
 ]
