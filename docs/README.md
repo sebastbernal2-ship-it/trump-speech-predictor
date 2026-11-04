@@ -1,6 +1,6 @@
 # Documentation
 
-These documents describe the active retrospective context-to-ideas project:
+These documents describe the active retrospective context-to-ideas project. Repository contribution and agent delivery requirements are in [`../AGENTS.md`](../AGENTS.md).
 
 - [`../README.md`](../README.md) — objective, leakage boundary, quick start, and repository map.
 - [`idea-layer/README.md`](idea-layer/README.md) — canonical task definition, current data/result, and limitations.
