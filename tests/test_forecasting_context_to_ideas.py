@@ -4,10 +4,16 @@ import unittest
 from datetime import date, timedelta
 from pathlib import Path
 
-from speechprefix.forecasting.context_to_ideas import evaluate_context_to_idea_classifier
+from speechprefix.stages.ideas.model import _metrics, evaluate_context_to_idea_classifier, predict_context_ideas
 
 
 class ContextIssueClassifierTests(unittest.TestCase):
+    def test_unseen_target_ideas_are_penalized_in_binary_loss(self):
+        metrics = _metrics([], {"new idea"}, all_labels={"known idea"})
+        self.assertEqual(metrics["candidate_coverage"], 0.0)
+        self.assertEqual(metrics["unseen_target_ideas"], 1.0)
+        self.assertGreater(metrics["binary_log_loss"], 10.0)
+
     def test_context_features_use_only_preceding_week_and_report_immutable_backtest(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -46,6 +52,15 @@ class ContextIssueClassifierTests(unittest.TestCase):
             self.assertIn("binary_log_loss", report["test_metrics"]["headline_conditioned_classifier"])
             self.assertEqual(report["final_fit"]["fit_event_count"], 20)
             self.assertTrue(output.exists())
+            prediction = predict_context_ideas(
+                {"event_id": "future", "event_date": "2024-01-21", "exploratory_only": True,
+                 "candidate_sources": [{"title": "Ukraine war", "published_at": "2024-01-20"}]},
+                report,
+            )
+            self.assertGreater(len(prediction), 0)
+            self.assertEqual(prediction[0]["score_type"], "uncalibrated_logit")
+            with self.assertRaisesRegex(ValueError, "strictly later"):
+                predict_context_ideas(snapshot_rows[-1], report)
             with self.assertRaises(FileExistsError):
                 evaluate_context_to_idea_classifier(snapshots, events, output_path=output)
 
