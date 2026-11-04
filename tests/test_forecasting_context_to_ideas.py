@@ -4,10 +4,24 @@ import unittest
 from datetime import date, timedelta
 from pathlib import Path
 
-from speechprefix.stages.ideas.model import _metrics, evaluate_context_to_idea_classifier, predict_context_ideas
+from speechprefix.stages.ideas.model import _features, _metrics, evaluate_context_to_idea_classifier, predict_context_ideas
 
 
 class ContextIssueClassifierTests(unittest.TestCase):
+    def test_features_deduplicate_and_strip_publisher_suffix_before_recency_cap(self):
+        snapshot = {
+            "event_id": "feature-test", "event_date": "2024-01-10",
+            "candidate_sources": [
+                {"title": "Tariff policy - Reuters", "publisher": "Reuters", "published_at": "2024-01-09"},
+                {"title": "Tariff policy - Reuters", "publisher": "Reuters", "published_at": "2024-01-08"},
+                {"title": "Ukraine energy - Associated Press", "publisher": "Associated Press", "published_at": "2024-01-10"},
+            ],
+        }
+        features = _features(snapshot, headline_limit=1)
+        self.assertIn("u:tariff", features)
+        self.assertNotIn("u:reuters", features)
+        self.assertNotIn("u:ukraine", features)  # same-day source is excluded
+
     def test_unseen_target_ideas_are_penalized_in_binary_loss(self):
         metrics = _metrics([], {"new idea"}, all_labels={"known idea"})
         self.assertEqual(metrics["candidate_coverage"], 0.0)
@@ -48,7 +62,7 @@ class ContextIssueClassifierTests(unittest.TestCase):
             report = evaluate_context_to_idea_classifier(snapshots, events, output_path=output)
             self.assertEqual(report["example_count"], 20)
             self.assertEqual(report["split"]["test_event_ids"], ["event-18", "event-19"])
-            self.assertIn("no target transcript", report["features"])
+            self.assertIn("No target transcript", report["features"])
             self.assertIn("binary_log_loss", report["test_metrics"]["headline_conditioned_classifier"])
             self.assertEqual(report["final_fit"]["fit_event_count"], 20)
             self.assertTrue(output.exists())
@@ -59,6 +73,7 @@ class ContextIssueClassifierTests(unittest.TestCase):
             )
             self.assertGreater(len(prediction), 0)
             self.assertEqual(prediction[0]["score_type"], "uncalibrated_logit")
+            self.assertIn("idea", prediction[0])
             with self.assertRaisesRegex(ValueError, "strictly later"):
                 predict_context_ideas(snapshot_rows[-1], report)
             with self.assertRaises(FileExistsError):
