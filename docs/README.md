@@ -5,7 +5,8 @@ These documents describe the active retrospective context-to-ideas project. Repo
 - [`../README.md`](../README.md) — objective, leakage boundary, quick start, and repository map.
 - [`idea-layer/README.md`](idea-layer/README.md) — canonical task definition, current data/result, and limitations.
 - [`architecture.md`](architecture.md) — active model/data flow and code entry points.
-- [`evaluation.md`](evaluation.md) — chronological splits, metrics, and the current development result.
+- [`evaluation.md`](evaluation.md) — chronological splits, metrics, and current development result.
+- [`idea-error-analysis.md`](idea-error-analysis.md) — per-event misses, qualitative failure diagnosis, and prioritized fixes.
 - [`data-audit.md`](data-audit.md) — corpus provenance and label limitations.
 - [`idea-layer/evaluation-protocol.md`](idea-layer/evaluation-protocol.md) — evaluation requirements.
 - [`idea-layer/ai-review-policy.md`](idea-layer/ai-review-policy.md) — constraints for assistant-reviewed semantic references.
