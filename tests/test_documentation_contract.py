@@ -14,6 +14,7 @@ def _markdown_files() -> list[Path]:
         *Path(ROOT / "docs").rglob("*.md"),
         ROOT / "README.md",
         ROOT / "CONTEXT.md",
+        ROOT / "AGENTS.md",
         ROOT / "data/README.md",
     ]
 
