@@ -1,0 +1,72 @@
+import json
+import tempfile
+import unittest
+from datetime import date, timedelta
+from pathlib import Path
+
+from speechprefix.forecasting.context_to_ideas import evaluate_context_to_idea_classifier
+
+
+class ContextIssueClassifierTests(unittest.TestCase):
+    def test_context_features_use_only_preceding_week_and_report_immutable_backtest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots.jsonl"
+            events = root / "events.jsonl"
+            output = root / "report.json"
+            start = date(2024, 1, 1)
+            snapshot_rows, event_rows = [], []
+            for index in range(20):
+                day = start + timedelta(days=index)
+                is_economy = index % 2 == 0
+                snapshot_rows.append({
+                    "event_id": f"event-{index}", "event_date": day.isoformat(),
+                    "exploratory_only": True,
+                    "candidate_sources": [
+                        {"title": "Ukraine war and American workers" if is_economy else "Second Amendment and border security",
+                         "published_at": (day-timedelta(days=2)).isoformat()},
+                        # This older source must not affect the feature vector.
+                        {"title": "Iran nuclear talks", "published_at": (day-timedelta(days=15)).isoformat()},
+                    ],
+                })
+                text = "We will end the war in Ukraine and protect American workers." if is_economy else "We must protect the Second Amendment and defend the border."
+                event_rows.append({
+                    "event_id": f"event-{index}", "event_date": day.isoformat(),
+                    "target_speaker": "Donald Trump", "turns": [{
+                        "turn_id": f"event-{index}:turn:1", "speaker_name": "Donald Trump",
+                        "speaker_role": "target_speaker", "text": text,
+                    }],
+                })
+            snapshots.write_text("".join(json.dumps(row)+"\n" for row in snapshot_rows), encoding="utf-8")
+            events.write_text("".join(json.dumps(row)+"\n" for row in event_rows), encoding="utf-8")
+            report = evaluate_context_to_idea_classifier(snapshots, events, output_path=output)
+            self.assertEqual(report["example_count"], 20)
+            self.assertEqual(report["split"]["test_event_ids"], ["event-18", "event-19"])
+            self.assertIn("no target transcript", report["features"])
+            self.assertIn("binary_log_loss", report["test_metrics"]["headline_conditioned_classifier"])
+            self.assertEqual(report["final_fit"]["fit_event_count"], 20)
+            self.assertTrue(output.exists())
+            with self.assertRaises(FileExistsError):
+                evaluate_context_to_idea_classifier(snapshots, events, output_path=output)
+
+    def test_rejects_same_day_headline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots.jsonl"
+            events = root / "events.jsonl"
+            day = date(2024, 1, 1)
+            rows_s, rows_e = [], []
+            for index in range(10):
+                current = day + timedelta(days=index)
+                rows_s.append({"event_id":str(index),"event_date":current.isoformat(),"exploratory_only":True,
+                               "candidate_sources":[{"title":"Ukraine war","published_at":current.isoformat()}]})
+                rows_e.append({"event_id":str(index),"event_date":current.isoformat(),"target_speaker":"Donald Trump",
+                               "turns":[{"turn_id":f"{index}:turn:1","speaker_name":"Donald Trump","speaker_role":"target_speaker","text":"The Ukraine war must end."}]})
+            snapshots.write_text("".join(json.dumps(row)+"\n" for row in rows_s),encoding="utf-8")
+            events.write_text("".join(json.dumps(row)+"\n" for row in rows_e),encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "same-day/future"):
+                evaluate_context_to_idea_classifier(snapshots,events)
+
+
+if __name__ == "__main__":
+    unittest.main()
