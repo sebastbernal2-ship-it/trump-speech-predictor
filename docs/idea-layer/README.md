@@ -1,74 +1,59 @@
-# Standalone idea-forecasting layer
+# Active specification: context → speech ideas
 
-## Goal
+This is the canonical project specification. Root `README.md` and `CONTEXT.md` summarize it.
 
-For one upcoming speech, rank **what ideas Trump is likely to address**, using only information verified as available before that speech. The most important inputs are current events and Trump’s own recent public posts; known event details are supporting context. Past speech history is a baseline or a secondary signal—not the main source of what matters now.
+## Objective
 
-As the speech unfolds, the same layer may update the idea ranking using only transcript turns already observed. This is still an idea forecast. It does not predict wording or generate a speech.
+For a historical Trump speech, predict the ideas he will address from news/context headlines published during the **seven days before that event**. Train and tune offline on the available historical input/output pairs. No live or upcoming event is required.
 
-## Scope boundary
+Each event is a supervised example:
 
-This package is intentionally separate from word continuation, generic speech generation, hierarchical speech plans, and question-answer response prediction. Those remain independent prototypes. Nothing in the idea layer should import their model weights or training data.
-
-The standalone Python boundary is `speechprefix/idea_layer/`. It has provenance/leakage validation, an append-only source ledger, immutable input snapshots, news/post import paths, a provider-neutral proposal schema, and a transparent evidence-weighted ranking baseline. It has no connected Trump-post archive, semantic candidate generator, or prospective accuracy result. Record formats are specified in [`contracts.md`](contracts.md). Legacy `context-news-*` and `context-issue-*` commands remain exploratory and are not the new system.
-
-## Forecast lifecycle
-
-1. **Register the event.** Record the scheduled start and a prediction cutoff. Store only event facts known before that cutoff, each linked to its source.
-2. **Capture evidence.** Keep breaking-news items, Trump posts, and event metadata in an append-only, source-attributed ledger. `idea-news-collect` captures headline-only Google News RSS results for explicit topic queries; the feed's publication times and links are not independently verified. `idea-post-import` normalizes a permitted, timestamped post archive; no social platform scraper is provided. `idea-source-import` accepts already-normalized local JSONL source rows. For each item, retain publication/observation times, URL/account/post ID, exact content fingerprint, and reuse terms.
-3. **Freeze the inputs.** `idea-snapshot-freeze` rejects items published or first observed at/after cutoff, or whose pre-cutoff availability is unverified; repeated captures with a shared `canonical_source_id` count once. It saves an immutable source bundle and hash before any forecast. The default local ledger is `data/idea-layer/source-ledger.jsonl` (Git-ignored).
-4. **Propose, then rank ideas.** A human or separate snapshot-conditioned model proposes open-vocabulary ideas with source citations. `idea-proposals-seal` binds proposals to the frozen snapshot; `idea-rank` currently ranks them with a transparent source-weight/recency baseline. This baseline does not generate semantic ideas or estimate probabilities, and has no demonstrated forecast accuracy.
-5. **Update during the speech.** Append new forecast snapshots as turns become observable. A change must cite already-visible turn IDs; never rewrite the initial pre-speech forecast.
-6. **Score afterward.** Only the evaluator reads the completed transcript. Compare forecasts to transcript-grounded idea labels and report both hits and misses.
-
-Example pipeline (the event manifest and source records must already exist; proposal JSON is an array of cited idea objects; use a new path for each immutable artifact):
-
-```sh
-.venv/bin/python -m speechprefix idea-news-collect --manifest data/idea-layer/event.json --query "oil OR Gaza OR Pakistan" --report data/idea-layer/news-run-001.json
-.venv/bin/python -m speechprefix idea-post-import --input data/idea-layer/permitted-post-export.jsonl
-.venv/bin/python -m speechprefix idea-snapshot-freeze --manifest data/idea-layer/event.json --output data/idea-layer/event-snapshot-001.json
-.venv/bin/python -m speechprefix idea-proposals-seal --snapshot data/idea-layer/event-snapshot-001.json --input data/idea-layer/proposals.json --generator manual-v1 --output data/idea-layer/proposal-set-001.json
-.venv/bin/python -m speechprefix idea-rank --snapshot data/idea-layer/event-snapshot-001.json --proposals data/idea-layer/proposal-set-001.json --output data/idea-layer/forecast-001.json
+```text
+X(event) = pre-event context headlines from [event_date - 7 days, event_date)
+y(event) = ideas expressed in the target-speaker transcript
 ```
 
-The contracts enforce these boundaries but cannot prove a source archive’s timestamps are truthful. Source capture procedure and evidence must be audited too.
+The transcript is the realized outcome, not a feature. For event `i`, never use its transcript, extracted labels, post-event material, or later context to make its prediction. Earlier examples' paired inputs and outcome labels may train the model for later examples. **Earlier speech text, historical phrase frequency, and speaker-history features are not predictor inputs.**
 
-## Data and model rules
+## Active code and command
 
-- No transcript, transcript-derived labels, post-event notes, or future turns in pre-speech input or forecast-generation code.
-- Every source has a stable ID, URL/permalink, publisher/account, original publication time, first-observed time, content hash, and reuse note. Trump posts must retain platform account and post ID.
-- Same-day material is eligible only if its exact publication and observation times are strictly before cutoff. A date-only label is insufficient.
-- Do not infer that a news item is relevant merely because it is recent. Rank *the likelihood Trump will address it*, using topical relevance, repeated coverage, his own posts, event-specific context, and history as separate, inspectable signals.
-- Preserve original idea wording and evidence citations. Consolidation into broader ideas must be auditable; do not silently collapse Gaza, Iran, Pakistan, oil, and the Middle East into one label.
-- Scores are rankings until calibrated on a separate chronological sample. Report the number of ideas forecast and how many were missed; abstention alone is not success.
-- Assistant-generated transcript annotations are attributed weak references, not human ground truth. Do not report them as semantic accuracy.
+- Model/evaluation: `speechprefix/forecasting/context_to_ideas.py`
+- Shared target extraction: `speechprefix/headline_idea_matching.py`
+- CLI: `context-idea-classifier-evaluate`
+- Tests: `tests/test_forecasting_context_to_ideas.py`
 
-## Evaluation contract
+Run the frozen historical context experiment with a new output path:
 
-The primary task is **pre-speech, event-specific issue/idea ranking**. Each forecast is frozen at one declared cutoff. Evaluate on chronological future events, with whole events kept together. Required comparisons:
+```sh
+uv run python -m speechprefix context-idea-classifier-evaluate \
+  --snapshots data/rollcall-context-snapshots-retro-combined-v1.jsonl \
+  --events data/rollcall-by-type/trump-speech-candidates.jsonl \
+  --output data/rollcall-context-to-idea-evaluation-NEW.json
+```
 
-1. event metadata only;
-2. recent news only;
-3. Trump-posts only;
-4. speaker-history only;
-5. combined evidence.
+The classifier uses headline-title unigram/bigram features and a Bernoulli Naive Bayes multi-label model. It selects smoothing and feature-frequency settings by validation binary log loss. Evaluation reports binary log loss, ranking quality, candidate coverage, and per-event predictions. A no-context issue-prevalence reference is reported separately and is not an input to the model.
 
-Report precision@K, recall@K, nDCG@K, event coverage/abstention, and date-cluster uncertainty. Show source ablations so we can tell whether posts and current news add value. Score candidate ideas at semantic level only against cited, transcript-grounded labels; separately show lexical matching as a diagnostic. A prospective forecast score requires a new event whose source snapshot was frozen before its cutoff. The inspected 2026 holdout is not available for tuning or claims.
+## Available historical data and current result
 
-Live-update evaluation is a separate replay: freeze the pre-speech snapshot, reveal transcript turns in timestamp order, and score each saved update against ideas supported by turns observed by that moment. Do not mix these scores with the pre-speech result.
+The current frozen context union contains 20 topic-family snapshots plus 18 separately collected news snapshots (38 unique events total). Six have no target phrases under the current extractor; 32 are usable. The fixed chronological split is 24 training, 4 validation, and 4 development events. The latest run selected `alpha=2.0`, `min_df=1`.
 
-## Current state and next work
+On the four development events, the headline classifier scored binary log loss **3.357**, nDCG@10 **0.428**, P@4 **0.500**, and recall@10 **0.315**. The no-context prevalence reference scored **0.324**, **0.439**, **0.563**, and **0.315** respectively. The classifier is overconfident and does not beat this simple reference. This is a negative first result, not proof that context cannot work.
 
-- Existing Google News searches are retrospective, and no prospectively frozen sample exists.
-- Google News RSS headline capture is implemented, but no truly prospective event has been frozen yet. The RSS publication time and link are feed-reported, not independently verified against the publisher.
-- The local Trump-post archive normalizer is implemented, but no permitted archive has been supplied or connected. Do not scrape a platform without checking its terms; verify account, post IDs, timestamps, and reuse terms for any export.
-- The old context ranker found source-supported phrases but did not show that Trump would discuss them; the speaker-history ranker predicts recurring labels and does not serve the current-events goal.
-- Next: identify and verify a permitted, attributable Trump-post archive; test the Google RSS capture on an actual future event with predeclared queries; then freeze one truly prospective snapshot. Do not train a complex ranker until input provenance and an evaluation target are working.
+All 38 snapshots were retrieved after their target speeches. Feed publication dates earlier than an event do not establish that the stories or search results were available then. The development sample is tiny; the target labels are incomplete lexical phrase extractions. These figures are retrospective tuning diagnostics, not semantic accuracy or independent test performance.
 
-## Repository map
+Artifacts are local and Git-ignored:
 
-- `speechprefix/idea_layer/`: isolated contracts, append-only ledger, news/post inputs, proposal validation, evidence-weighted baseline, and snapshot freezer; connecting a post archive, semantic proposal generator, and incremental updates remain future work.
-- `tests/test_idea_layer_contracts.py`, `tests/test_idea_layer_ledger.py`, `tests/test_idea_layer_news.py`, `tests/test_idea_layer_posts.py`, `tests/test_idea_layer_ranker.py`: cutoff, provenance, append-only, retrieval/import, synthetic ranking, and update-citation checks.
-- `docs/idea-layer/README.md`: canonical scope and evaluation contract.
-- `docs/context-theme-forecast.md`: historical experiments only.
-- `speechprefix/` modules outside `idea_layer/`: existing research prototypes and baselines, not dependencies of this layer.
+- `data/rollcall-context-snapshots-retro-combined-v1.jsonl` — SHA-256 `96e94152e3b9318dbe8ab34dc28fd0d3a8f8718fa6f0ed5316cb143d43f33314`
+- `data/rollcall-context-to-idea-evaluation-v3.json` — SHA-256 `4f8c44f012ba34c005ffb59f27a99c2ba29391deb760150f95081e9e27accb7d`
+
+## Data/review rules
+
+- Keep event dates and source publication dates explicit. Same-day date-only headlines are excluded.
+- Do not use headline summaries, locations, event titles, or metadata unless explicitly included in a separately versioned feature set and timestamped as available; the current classifier uses headline titles only.
+- Preserve raw evidence and immutable run outputs; never overwrite local snapshots or evaluation artifacts.
+- The phrase extractor is a weak target-label mechanism. It is not exhaustive or semantic gold. Preserve misses and uncertainty; do not claim accuracy beyond the specified label task.
+- Transcript interpretation or semantic matching is AI-only. Assistant-reviewed labels are references, not objective truth. See [`ai-review-policy.md`](ai-review-policy.md).
+
+## Explicitly out of scope
+
+Speech-history recurrence as a prediction feature, incoming/live speech collection, speech wording or plan generation, Q&A, and provider-prompt generation are outside the active objective. Historical prototype implementations remain outside the active forecasting path and are not dependencies of this model.
