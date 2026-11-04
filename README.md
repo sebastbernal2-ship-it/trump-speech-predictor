@@ -27,7 +27,9 @@ Reports and local collected corpora must remain Git-ignored and immutable; use a
 
 ## Repository map
 
-- `speechprefix/forecasting/`: active context-to-ideas model and training/evaluation logic.
+- `speechprefix/forecasting/`: current active context-to-ideas implementation (migration into `speechprefix/stages/ideas/` is pending).
+- `speechprefix/stages/`: explicit ideas and future sentence-stage package scaffolds; see `docs/architecture.md` for status.
+- `speechprefix/pipelines/`: reserved for future orchestration; no end-to-end pipeline exists yet.
 - `speechprefix/`: shared transcript parsing, issue-target extraction, CLI, and legacy research prototypes.
 - `tests/`: unit and synthetic-fixture tests.
 - `data/`: local ignored transcripts, news snapshots, predictions, and evaluations.
