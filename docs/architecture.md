@@ -20,4 +20,12 @@ Active implementation:
 - `speechprefix/cli.py`: `context-idea-classifier-evaluate` command.
 - `tests/test_forecasting_context_to_ideas.py`: synthetic cutoff, chronological split, and immutable-output checks.
 
-The rest of `speechprefix/` contains legacy or unrelated prototypes. They are not dependencies or feature sources for the active predictor. See [`idea-layer/README.md`](idea-layer/README.md) for exact scoring definitions and [`evaluation.md`](evaluation.md) for the backtest contract.
+## Planned multi-stage layout
+
+The stage boundaries are scaffolded now so future work has a designated home:
+
+- [`speechprefix/stages/ideas/README.md`](../speechprefix/stages/ideas/README.md): intended home for the active ideas predictor. **The implementation has not yet been migrated** from `speechprefix/forecasting/`.
+- [`speechprefix/stages/sentences/README.md`](../speechprefix/stages/sentences/README.md): reserved for a future sentence-level model. It is intentionally empty of model code until its contract and evaluation are defined.
+- [`speechprefix/pipelines/README.md`](../speechprefix/pipelines/README.md): reserved for orchestration across stages; no end-to-end pipeline exists yet.
+
+These are explicit scaffolds, not claims that later stages already exist. The rest of `speechprefix/` still contains legacy or unrelated prototypes; they are not active-model dependencies or feature sources. See [`idea-layer/README.md`](idea-layer/README.md) for the task contract and [`evaluation.md`](evaluation.md) for the current backtest.
