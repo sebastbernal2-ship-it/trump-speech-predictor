@@ -20,7 +20,11 @@ def load_speeches(path: str) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="speechprefix")
+    parser = argparse.ArgumentParser(
+        prog="speechprefix",
+        description="Research utilities. The active idea-prediction workflow is context-idea-classifier-evaluate.",
+        epilog="Other forecasting and review commands are legacy experiments, not the project objective.",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     train = sub.add_parser("train", help="train an n-gram baseline")
@@ -42,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
     evaluate.add_argument("--input", required=True)
     evaluate.add_argument("--order", type=int, default=5)
 
-    forecast = sub.add_parser("forecast", help="forecast recurring phrases before the next speech")
+    forecast = sub.add_parser("forecast", help="legacy speaker-history phrase baseline (not the active context-to-ideas model)")
     forecast.add_argument("--input", required=True, help="chronological JSONL speech records")
     forecast.add_argument("--top", type=int, default=20)
 
@@ -160,6 +164,56 @@ def main(argv: list[str] | None = None) -> int:
     idea_proposals_seal.add_argument("--generator", required=True, help="human or provider/model identifier")
     idea_proposals_seal.add_argument("--output", required=True, help="new immutable proposal-set JSON")
 
+    idea_headline_propose = sub.add_parser(
+        "idea-headline-propose",
+        help="extract source-cited issue-phrase proposals from a frozen snapshot (lexical baseline)",
+    )
+    idea_headline_propose.add_argument("--snapshot", required=True)
+    idea_headline_propose.add_argument("--output", required=True, help="new immutable proposal-set JSON")
+
+    idea_semantic_ablate = sub.add_parser(
+        "idea-semantic-ablate", help="legacy semantic-forecast prototype ablation; not the active supervised model"
+    )
+    idea_semantic_ablate.add_argument("--snapshot", required=True)
+    idea_semantic_ablate.add_argument(
+        "--variant", required=True,
+        choices=("combined", "news_only", "event_context_only", "speaker_history_only"),
+    )
+    idea_semantic_ablate.add_argument("--output", required=True)
+
+    idea_semantic_prompt = sub.add_parser(
+        "idea-semantic-prompt",
+        help="legacy provider-neutral semantic-forecast prompt prototype; not the active supervised model",
+    )
+    idea_semantic_prompt.add_argument("--snapshot", required=True)
+    idea_semantic_prompt.add_argument("--max-sources", type=int, default=40)
+    idea_semantic_prompt.add_argument("--output", required=True, help="new immutable prompt JSON")
+
+    idea_semantic_proposals = sub.add_parser(
+        "idea-semantic-proposals",
+        help="legacy semantic-forecast prototype response validation",
+    )
+    idea_semantic_proposals.add_argument("--snapshot", required=True)
+    idea_semantic_proposals.add_argument("--prompt", required=True)
+    idea_semantic_proposals.add_argument("--response", required=True, help="provider response containing raw JSON")
+    idea_semantic_proposals.add_argument("--provider", required=True)
+    idea_semantic_proposals.add_argument("--model", required=True)
+    idea_semantic_proposals.add_argument("--output", required=True)
+
+    idea_semantic_rank = sub.add_parser(
+        "idea-semantic-rank", help="legacy semantic-forecast prototype ranking"
+    )
+    idea_semantic_rank.add_argument("--snapshot", required=True)
+    idea_semantic_rank.add_argument("--proposals", required=True)
+    idea_semantic_rank.add_argument("--top-k", type=int, default=10)
+    idea_semantic_rank.add_argument("--output", required=True)
+
+    idea_semantic_bundle = sub.add_parser(
+        "idea-semantic-bundle", help="legacy semantic-forecast prototype evaluation bundle"
+    )
+    idea_semantic_bundle.add_argument("--forecast", action="append", required=True, help="semantic forecast JSON; repeat for events")
+    idea_semantic_bundle.add_argument("--output", required=True)
+
     idea_rank = sub.add_parser(
         "idea-rank", help="rank cited proposals with the transparent evidence-weighted baseline"
     )
@@ -168,17 +222,89 @@ def main(argv: list[str] | None = None) -> int:
     idea_rank.add_argument("--output", required=True, help="new immutable forecast JSON")
     idea_rank.add_argument("--model-version", default="evidence-weighted-baseline-v1")
 
+    idea_news_backtest = sub.add_parser(
+        "idea-news-phrase-backtest",
+        help="legacy news-phrase prototype backtest; not the active context-to-ideas classifier",
+    )
+    idea_news_backtest.add_argument("--snapshots", default="data/rollcall-context-snapshots-topic-families-v1.jsonl")
+    idea_news_backtest.add_argument("--events", default="data/rollcall-events.jsonl")
+    idea_news_backtest.add_argument("--output", required=True, help="new immutable backtest report JSON")
+    idea_news_backtest.add_argument("--train-fraction", type=float, default=0.8)
+    idea_news_backtest.add_argument("--validation-fraction", type=float, default=0.1)
+    idea_news_backtest.add_argument(
+        "--semantic-model", default=None,
+        help="optional locally cached Hugging Face encoder for phrase/headline cosine ranking; never downloads weights",
+    )
+
+    assistant_review_validate = sub.add_parser(
+        "assistant-review-validate",
+        help="validate transcript-only assistant review hashes, citations, and declared review ordering",
+    )
+    assistant_review_validate.add_argument("--pass-a", action="append", required=True, help="frozen Pass-A JSONL; repeatable")
+    assistant_review_validate.add_argument("--mapped", action="append", required=True, help="provenance-mapped JSONL; repeatable")
+    assistant_review_validate.add_argument("--key", default="data/rollcall-theme-review-key-v2.json")
+    assistant_review_validate.add_argument("--events", default="data/rollcall-events.jsonl")
+    assistant_review_validate.add_argument("--transcripts", default="data/rollcall-theme-review-annotator-a-v2.jsonl")
+    assistant_review_validate.add_argument("--output", help="optional new JSON validation report; existing files are never overwritten")
+
+    assistant_review_forecast = sub.add_parser(
+        "assistant-review-history-forecast",
+        help="legacy history-only comparator replay (not the active context-to-ideas model)",
+    )
+    assistant_review_forecast.add_argument("--history", default="data/rollcall-by-type/trump-speech-candidates.jsonl")
+    assistant_review_forecast.add_argument("--targets", required=True, help="JSONL with only event_id and event_date")
+    assistant_review_forecast.add_argument("--top-k", type=int, default=10)
+    assistant_review_forecast.add_argument("--output", required=True, help="new immutable forecast replay JSON")
+
+    assistant_news_forecast = sub.add_parser(
+        "assistant-review-news-forecast",
+        help="replay a retrospective, date-filtered news-to-phrase baseline for assistant-reviewed events",
+    )
+    assistant_news_forecast.add_argument("--snapshots", required=True, help="historical headline snapshot JSONL")
+    assistant_news_forecast.add_argument("--top-k", type=int, default=10)
+    assistant_news_forecast.add_argument("--output", required=True, help="new immutable retrospective forecast report")
+
+    assistant_news_audit = sub.add_parser(
+        "assistant-review-news-audit",
+        help="diagnose lexical evidence, phrase-generation, and top-k bottlenecks in a frozen retrospective news forecast",
+    )
+    assistant_news_audit.add_argument("--snapshots", required=True)
+    assistant_news_audit.add_argument("--forecast", required=True)
+    assistant_news_audit.add_argument("--agreement", required=True)
+    assistant_news_audit.add_argument("--reference", action="append", required=True)
+    assistant_news_audit.add_argument("--top-k", type=int, default=10)
+    assistant_news_audit.add_argument("--output", required=True, help="new immutable post-hoc audit report")
+
+    assistant_review_score = sub.add_parser(
+        "assistant-review-forecast-score",
+        help="aggregate explicit assistant decisions against frozen transcript-only outcomes",
+    )
+    assistant_review_score.add_argument("--forecast", required=True, help="frozen history forecast replay JSON")
+    assistant_review_score.add_argument("--reference", action="append", required=True, help="mapped assistant outcome JSONL; repeatable")
+    assistant_review_score.add_argument("--decisions", required=True, help="assistant candidate-match decisions JSONL")
+    assistant_review_score.add_argument("--protocol-snapshot", required=True, help="exact AI review policy bytes named by decisions")
+    assistant_review_score.add_argument("--output", required=True, help="new immutable agreement report JSON")
+
     speaker_idea_eval = sub.add_parser(
-        "speaker-idea-evaluate", help="walk-forward evaluate recurring issue-phrase forecasts from speaker history"
+        "speaker-idea-evaluate", help="legacy speaker-history baseline evaluation; not the active context-to-ideas model"
     )
     speaker_idea_eval.add_argument("--input", default="data/rollcall-by-type/trump-speech-candidates.jsonl")
     speaker_idea_eval.add_argument("--output", default="data/rollcall-speaker-idea-evaluation-v1.json")
     speaker_idea_eval.add_argument("--train-fraction", type=float, default=0.8)
     speaker_idea_eval.add_argument("--validation-fraction", type=float, default=0.1)
 
+    context_idea_classifier = sub.add_parser(
+        "context-idea-classifier-evaluate", help="train a chronological supervised news-headline-to-speech-idea classifier"
+    )
+    context_idea_classifier.add_argument("--snapshots", required=True, help="historical pre-event context snapshots JSONL")
+    context_idea_classifier.add_argument("--events", default="data/rollcall-by-type/trump-speech-candidates.jsonl")
+    context_idea_classifier.add_argument("--output", required=True)
+    context_idea_classifier.add_argument("--train-fraction", type=float, default=0.8)
+    context_idea_classifier.add_argument("--validation-fraction", type=float, default=0.1)
+
     selective_eval = sub.add_parser(
         "speaker-idea-selective-evaluate",
-        help="select an abstaining high-precision idea forecaster on training dates and score validation only",
+        help="legacy speaker-history baseline selection; not the active context-to-ideas model",
     )
     selective_eval.add_argument("--input", default="data/rollcall-by-type/trump-speech-candidates.jsonl")
     selective_eval.add_argument("--output", default="data/rollcall-speaker-idea-selective-evaluation-v5.json")
@@ -187,7 +313,7 @@ def main(argv: list[str] | None = None) -> int:
 
     selective_forecast = sub.add_parser(
         "speaker-idea-forecast",
-        help="forecast only recurrent issue phrases with a strict pre-date history and abstention",
+        help="legacy speaker-history phrase forecast; not the active context-to-ideas model",
     )
     selective_forecast.add_argument("--input", default="data/rollcall-by-type/trump-speech-candidates.jsonl")
     selective_forecast.add_argument("--as-of", required=True, help="exclusive ISO date cutoff for the forecast")
@@ -197,33 +323,33 @@ def main(argv: list[str] | None = None) -> int:
     selective_forecast.add_argument("--max-predictions", type=int, default=1)
 
     context_theme_eval = sub.add_parser(
-        "context-theme-evaluate", help="evaluate a weak, chronological context-to-theme ranking baseline"
+        "context-theme-evaluate", help="legacy context-theme prototype evaluation; not the active supervised model"
     )
     context_theme_eval.add_argument("--snapshots", default="data/rollcall-context-snapshots-v1.jsonl")
     context_theme_eval.add_argument("--labels", default="data/rollcall-theme-family-drafts-v1.jsonl")
     context_theme_eval.add_argument("--output", default="data/rollcall-context-theme-evaluation-v1.json")
 
     transcript_idea_audit = sub.add_parser(
-        "transcript-idea-audit", help="mine cited target-speaker ideas and compare them with dated headlines"
+        "transcript-idea-audit", help="legacy retrospective headline/phrase audit; not the active supervised model"
     )
     transcript_idea_audit.add_argument("--snapshots", default="data/rollcall-context-snapshots-v1.jsonl")
     transcript_idea_audit.add_argument("--events", default="data/rollcall-by-type/trump-speech-candidates.jsonl")
     transcript_idea_audit.add_argument("--output", default="data/rollcall-transcript-idea-audit-v1.json")
 
     context_issue_forecast = sub.add_parser(
-        "context-issue-forecast", help="write source-cited issue candidates before a sealed event cutoff"
+        "context-issue-forecast", help="legacy prospective candidate workflow; not the active retrospective supervised model"
     )
     context_issue_forecast.add_argument("--snapshot", required=True, help="sealed prospective context snapshot JSON")
     context_issue_forecast.add_argument("--output", required=True, help="new immutable local forecast JSON")
 
     context_candidates = sub.add_parser(
-        "context-candidates", help="extract source-grounded issue candidates from pre-event headlines"
+        "context-candidates", help="legacy source-grounded candidate extractor; not the active supervised classifier"
     )
     context_candidates.add_argument("--input", required=True, help="JSON context map or JSONL snapshot file")
     context_candidates.add_argument("--event-id", help="select an event from a multi-event JSONL input")
 
     context_idea_eval = sub.add_parser(
-        "context-idea-evaluate", help="compare context-derived issue phrases with a chronological speaker-history baseline"
+        "context-idea-evaluate", help="legacy context-candidate comparison with a speaker-history baseline; not the active model"
     )
     context_idea_eval.add_argument("--snapshots", default="data/rollcall-context-snapshots-v1.jsonl")
     context_idea_eval.add_argument("--events", default="data/rollcall-by-type/trump-speech-candidates.jsonl")
@@ -241,7 +367,7 @@ def main(argv: list[str] | None = None) -> int:
     context_issue_forecast_eval.add_argument("--top-k", default="4,10,25", help="comma-separated cutoffs")
 
     context_candidate_eval = sub.add_parser(
-        "context-candidate-evaluate", help="evaluate source-derived issue candidates against weak theme labels"
+        "context-candidate-evaluate", help="legacy candidate evaluation; not the active supervised classifier"
     )
     context_candidate_eval.add_argument("--snapshots", default="data/rollcall-context-snapshots-v1.jsonl")
     context_candidate_eval.add_argument("--labels", default="data/rollcall-theme-family-drafts-v1.jsonl")
@@ -265,7 +391,7 @@ def main(argv: list[str] | None = None) -> int:
     context_snapshot_seal.add_argument("--output", required=True, help="new output path; existing files are never overwritten")
 
     theme_review = sub.add_parser(
-        "theme-review-packet", help="generate two blinded, transcript-only theme annotation packets"
+        "theme-review-packet", help="legacy human-annotation prototype; not part of the active assistant-only workflow"
     )
     theme_review.add_argument(
         "--selection-manifest", "--snapshots", dest="snapshots",
@@ -283,7 +409,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     theme_review_agreement = sub.add_parser(
-        "theme-review-agreement", help="validate completed blind theme forms and report inter-annotator agreement"
+        "theme-review-agreement", help="legacy human-annotation prototype; not part of the active assistant-only workflow"
     )
     theme_review_agreement.add_argument("--annotator-a", default="data/rollcall-theme-review-annotator-a-v1.jsonl")
     theme_review_agreement.add_argument("--annotator-b", default="data/rollcall-theme-review-annotator-b-v1.jsonl")
@@ -291,14 +417,14 @@ def main(argv: list[str] | None = None) -> int:
     theme_review_agreement.add_argument("--output", default="data/rollcall-theme-review-agreement-v1.json")
 
     theme_review_template = sub.add_parser(
-        "theme-review-adjudication-template", help="create a blank event-ID-free human adjudication form"
+        "theme-review-adjudication-template", help="legacy human-annotation prototype; not part of the active assistant-only workflow"
     )
     theme_review_template.add_argument("--annotator-packet", default="data/rollcall-theme-review-annotator-a-v1.jsonl")
     theme_review_template.add_argument("--key", default="data/rollcall-theme-review-key-v1.json")
     theme_review_template.add_argument("--output", default="data/rollcall-theme-adjudication-template-v1.jsonl")
 
     theme_review_adjudicate = sub.add_parser(
-        "theme-review-adjudicate", help="export human-adjudicated theme labels from completed blind reviews"
+        "theme-review-adjudicate", help="legacy human-annotation prototype; not part of the active assistant-only workflow"
     )
     theme_review_adjudicate.add_argument("--annotator-a", default="data/rollcall-theme-review-annotator-a-v1.jsonl")
     theme_review_adjudicate.add_argument("--annotator-b", default="data/rollcall-theme-review-annotator-b-v1.jsonl")
@@ -636,6 +762,102 @@ def main(argv: list[str] | None = None) -> int:
                 "proposal_count": len(proposal_set["proposals"]),
                 "proposal_set_sha256": proposal_set["proposal_set_sha256"],
             }, ensure_ascii=False, indent=2))
+        elif args.command == "idea-headline-propose":
+            import json
+            from .idea_layer.headline_proposals import propose_headline_issue_phrases
+
+            output_path = Path(args.output)
+            if output_path.exists():
+                raise FileExistsError(f"refusing to overwrite proposal set: {output_path}")
+            snapshot = json.loads(Path(args.snapshot).read_text(encoding="utf-8"))
+            proposal_set = propose_headline_issue_phrases(snapshot)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with output_path.open("x", encoding="utf-8") as stream:
+                json.dump(proposal_set, stream, ensure_ascii=False, indent=2)
+                stream.write("\n")
+            print(json.dumps({
+                "output": args.output,
+                "proposal_set_id": proposal_set["proposal_set_id"],
+                "generator": proposal_set["generator"],
+                "proposal_count": len(proposal_set["proposals"]),
+                "proposal_set_sha256": proposal_set["proposal_set_sha256"],
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "idea-semantic-ablate":
+            import json
+            from .idea_layer.ablation import derive_source_ablation
+            from .idea_layer.semantic_forecast import write_immutable_json
+
+            snapshot = json.loads(Path(args.snapshot).read_text(encoding="utf-8"))
+            derived = derive_source_ablation(snapshot, args.variant)
+            write_immutable_json(args.output, derived)
+            print(json.dumps({
+                "output": args.output,
+                "event_id": derived["event_id"],
+                "source_ablation": derived["source_ablation"],
+                "source_count": len(derived["sources"]),
+                "snapshot_sha256": derived["snapshot_sha256"],
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "idea-semantic-prompt":
+            import json
+            from .idea_layer.semantic_forecast import build_semantic_prompt, write_immutable_json
+
+            snapshot = json.loads(Path(args.snapshot).read_text(encoding="utf-8"))
+            prompt = build_semantic_prompt(snapshot, max_sources=args.max_sources)
+            write_immutable_json(args.output, prompt)
+            print(json.dumps({
+                "output": args.output,
+                "event_id": prompt["event_id"],
+                "prompt_source_count": len(prompt["prompt_source_ids"]),
+                "prompt_sha256": prompt["prompt_sha256"],
+                "provider_call_made": False,
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "idea-semantic-proposals":
+            import json
+            from .idea_layer.semantic_forecast import build_semantic_proposal_set, write_immutable_json
+
+            snapshot = json.loads(Path(args.snapshot).read_text(encoding="utf-8"))
+            prompt = json.loads(Path(args.prompt).read_text(encoding="utf-8"))
+            response = Path(args.response).read_text(encoding="utf-8")
+            proposals = build_semantic_proposal_set(
+                snapshot, prompt, response, provider=args.provider, model=args.model,
+            )
+            write_immutable_json(args.output, proposals)
+            print(json.dumps({
+                "output": args.output,
+                "event_id": proposals["event_id"],
+                "proposal_count": len(proposals["proposals"]),
+                "proposal_set_sha256": proposals["proposal_set_sha256"],
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "idea-semantic-rank":
+            import json
+            from .idea_layer.semantic_forecast import rank_semantic_idea_proposals, write_immutable_json
+
+            snapshot = json.loads(Path(args.snapshot).read_text(encoding="utf-8"))
+            proposals = json.loads(Path(args.proposals).read_text(encoding="utf-8"))
+            forecast = rank_semantic_idea_proposals(snapshot, proposals, top_k=args.top_k)
+            write_immutable_json(args.output, forecast)
+            print(json.dumps({
+                "output": args.output,
+                "event_id": forecast["event_id"],
+                "candidate_count": forecast["candidate_count"],
+                "top_k": forecast["top_k"],
+                "abstained": forecast["abstained"],
+                "forecast_sha256": forecast["forecast_sha256"],
+                "score_kind": "uncalibrated_heuristic_ranking_score_not_probability",
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "idea-semantic-bundle":
+            import json
+            from .idea_layer.semantic_forecast_bundle import build_semantic_forecast_evaluation_bundle
+
+            bundle = build_semantic_forecast_evaluation_bundle(args.forecast, output_path=args.output)
+            print(json.dumps({
+                "output": args.output,
+                "event_count": len(bundle["forecasts"]),
+                "candidate_count": sum(len(row["predictions"]) for row in bundle["forecasts"]),
+                "provider": bundle["provider"],
+                "model": bundle["model"],
+                "report_content_sha256": bundle["report_content_sha256"],
+            }, ensure_ascii=False, indent=2))
         elif args.command == "idea-rank":
             import json
             from .idea_layer.ranker import rank_pre_speech_ideas
@@ -659,6 +881,129 @@ def main(argv: list[str] | None = None) -> int:
                 "forecast_sha256": forecast["forecast_sha256"],
                 "model_version": forecast["model_version"],
                 "score_kind": "ranking_score",
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "idea-news-phrase-backtest":
+            import json
+            from .idea_layer.news_phrase_backtest import evaluate_retrospective_news_phrase_model
+
+            result = evaluate_retrospective_news_phrase_model(
+                args.snapshots, args.events, output_path=args.output,
+                train_fraction=args.train_fraction, validation_fraction=args.validation_fraction,
+                semantic_model=args.semantic_model,
+            )
+            metrics = result["test_metrics"]
+            print(json.dumps({
+                "output": args.output,
+                "evaluation_mode": result["evaluation_mode"],
+                "split_sizes": {key: len(result["split"][key]) for key in (
+                    "train_event_ids", "validation_event_ids", "test_event_ids",
+                )},
+                "test_metrics": metrics,
+                "aggregate_error_breakdown_by_model": result["test_diagnostics"]["aggregate_error_breakdown_by_model"],
+                "limitations": result["limitations"],
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "assistant-review-validate":
+            import json
+            from .idea_layer.assistant_review_validation import validate_assistant_review_artifacts
+
+            report = validate_assistant_review_artifacts(
+                pass_a_paths=args.pass_a,
+                mapped_paths=args.mapped,
+                key_path=args.key,
+                events_path=args.events,
+                transcript_packet_path=args.transcripts,
+            )
+            if args.output:
+                output_path = Path(args.output)
+                if output_path.exists():
+                    raise FileExistsError(f"refusing to overwrite validation report: {output_path}")
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                with output_path.open("x", encoding="utf-8") as stream:
+                    json.dump(report, stream, ensure_ascii=False, indent=2)
+                    stream.write("\n")
+                report["output"] = args.output
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+        elif args.command == "assistant-review-history-forecast":
+            import json
+            from .idea_layer.review_history_forecast import forecast_history_prevalence_for_review_events
+
+            result = forecast_history_prevalence_for_review_events(
+                args.history, args.targets, output_path=args.output, top_k=args.top_k,
+            )
+            print(json.dumps({
+                "output": args.output,
+                "evaluation_mode": result["evaluation_mode"],
+                "model_version": result["model_version"],
+                "target_count": len(result["forecasts"]),
+                "abstentions": sum(item["abstained"] for item in result["forecasts"]),
+                "limitations": result["limitations"],
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "assistant-review-news-forecast":
+            import json
+            from .idea_layer.retrospective_news_backtest import build_retrospective_news_idea_forecasts
+
+            result = build_retrospective_news_idea_forecasts(
+                args.snapshots, output_path=args.output, top_k=args.top_k,
+            )
+            print(json.dumps({
+                "output": args.output,
+                "evaluation_mode": result["evaluation_mode"],
+                "event_count": len(result["forecasts"]),
+                "candidate_count": sum(len(row["predictions"]) for row in result["forecasts"]),
+                "abstentions": sum(row["abstained"] for row in result["forecasts"]),
+                "limitations": result["limitations"],
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "assistant-review-news-audit":
+            import json
+            from .idea_layer.retrospective_news_error_audit import audit_retrospective_news_forecast
+
+            result = audit_retrospective_news_forecast(
+                snapshots_path=args.snapshots,
+                forecast_path=args.forecast,
+                agreement_path=args.agreement,
+                reference_paths=args.reference,
+                output_path=args.output,
+                top_k=args.top_k,
+            )
+            print(json.dumps({
+                "output": args.output,
+                "audit_status": result["audit_status"],
+                "scored_event_count": result["scored_event_count"],
+                "forecastable_outcome_miss_count": result["forecastable_outcome_miss_count"],
+                "misses_by_lexical_diagnostic_bucket": result["misses_by_lexical_diagnostic_bucket"],
+                "interpretation_limits": result["interpretation_limits"],
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "assistant-review-forecast-score":
+            import json
+            from .idea_layer.assistant_review_forecast_evaluation import evaluate_assistant_reviewed_forecasts
+
+            result = evaluate_assistant_reviewed_forecasts(
+                forecast_path=args.forecast,
+                reference_paths=args.reference,
+                decisions_path=args.decisions,
+                protocol_snapshot_path=args.protocol_snapshot,
+                output_path=args.output,
+            )
+            print(json.dumps({
+                "output": args.output,
+                "scored_event_count": result["scored_event_count"],
+                "candidate_decision_counts": result["candidate_decision_counts"],
+                "candidate_agreement": result["candidate_agreement"],
+                "outcome_coverage": result["outcome_coverage"],
+                "limitations": result["limitations"],
+            }, ensure_ascii=False, indent=2))
+        elif args.command == "context-idea-classifier-evaluate":
+            import json
+            from .forecasting.context_to_ideas import evaluate_context_to_idea_classifier
+
+            result = evaluate_context_to_idea_classifier(
+                args.snapshots, args.events, output_path=args.output,
+                train_fraction=args.train_fraction, validation_fraction=args.validation_fraction,
+            )
+            print(json.dumps({
+                "output": args.output, "example_count": result["example_count"],
+                "selected_config": result["selected_config"], "test_metrics": result["test_metrics"],
+                "final_fit": result["final_fit"], "report_content_sha256": result["report_content_sha256"],
             }, ensure_ascii=False, indent=2))
         elif args.command == "speaker-idea-evaluate":
             import json

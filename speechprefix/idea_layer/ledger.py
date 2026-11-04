@@ -164,7 +164,11 @@ def freeze_idea_input_snapshot(
             eligible = False
         if source_id in required and not eligible:
             raise ValueError(f"required event context source is not verified before cutoff: {source_id}")
-        if eligible and (published >= lookback_start or source_id in required):
+        if eligible and (
+            published >= lookback_start
+            or source_id in required
+            or source.get("source_role") == "speaker_history"
+        ):
             selected[source_id] = source
 
     required_sources = {source_id: selected[source_id] for source_id in required}

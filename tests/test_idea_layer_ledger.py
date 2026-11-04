@@ -79,6 +79,8 @@ class IdeaLayerLedgerTests(unittest.TestCase):
                 self._source("news-gaza-later", "news", "Gaza ceasefire talks", "2030-01-20T11:00:00Z", "2030-01-20T14:59:00Z", canonical_source_id="news-gaza-canonical"),
                 self._source("post-1", "trump_post", "We are watching oil.", "2030-01-20T13:00:00Z", "2030-01-20T13:02:00Z", account="realDonaldTrump", post_id="123"),
                 self._source("old", "news", "Old story", "2029-01-01T00:00:00Z", "2029-01-01T00:01:00Z"),
+                self._source("history-old", "other_primary_source", "Earlier speech transcript", "2028-01-01T00:00:00Z", "2028-01-02T00:00:00Z", source_role="speaker_history"),
+                self._source("archive-old", "other_primary_source", "Old unrelated primary source", "2028-01-01T00:00:00Z", "2028-01-02T00:00:00Z"),
                 self._source("unverified", "news", "Unverified story", "2030-01-20T11:00:00Z", "2030-01-20T11:01:00Z", status="unknown"),
                 self._source("late", "news", "After-cutoff story", "2030-01-20T16:01:00Z", "2030-01-20T16:02:00Z"),
             ]
@@ -89,8 +91,8 @@ class IdeaLayerLedgerTests(unittest.TestCase):
                 frozen_at=datetime(2030, 1, 20, 15, 0, tzinfo=timezone.utc),
             )
             snapshot = json.loads(output.read_text(encoding="utf-8"))
-            self.assertEqual(set(snapshot["input_source_ids"]), {"schedule", "news-oil", "news-gaza-later", "post-1"})
-            self.assertEqual(result["source_count"], 4)
+            self.assertEqual(set(snapshot["input_source_ids"]), {"schedule", "news-oil", "news-gaza-later", "post-1", "history-old"})
+            self.assertEqual(result["source_count"], 5)
             self.assertTrue(validate_idea_input_snapshot(snapshot)["strict_pre_cutoff"])
             snapshot["lookback_days"] = 31
             with self.assertRaisesRegex(ValueError, "snapshot_sha256"):

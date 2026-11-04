@@ -97,6 +97,12 @@ def validate_source_evidence(source: dict[str, Any]) -> dict[str, str]:
     if availability_status == "verified_before_cutoff":
         _required_text(source, "availability_evidence")
         _required_text(source, "timestamp_basis")
+    source_role = source.get("source_role")
+    if source_role is not None:
+        if source_role != "speaker_history":
+            raise ValueError("source_role must be speaker_history when present")
+        if source_type != "other_primary_source":
+            raise ValueError("speaker_history sources must use source_type other_primary_source")
     if source_type == "trump_post":
         _required_text(source, "account")
         _required_text(source, "post_id")
