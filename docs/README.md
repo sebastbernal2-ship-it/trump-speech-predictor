@@ -4,6 +4,8 @@ These documents describe the active retrospective context-to-ideas project. Repo
 
 - [`../README.md`](../README.md) — objective, leakage boundary, quick start, and repository map.
 - [`idea-layer/README.md`](idea-layer/README.md) — canonical task definition, current data/result, and limitations.
+- [`idea-layer/input-source-audit.md`](idea-layer/input-source-audit.md) — input-source findings, coverage, and availability/rights caveats.
+- [`idea-layer/2019-full-year-preliminary-study.md`](idea-layer/2019-full-year-preliminary-study.md) — source coverage and preliminary 2019 calendar-year backtest diagnostics.
 - [`architecture.md`](architecture.md) — active model/data flow and code entry points.
 - [`evaluation.md`](evaluation.md) — chronological splits, metrics, and current development result.
 - [`idea-error-analysis.md`](idea-error-analysis.md) — per-event misses, qualitative failure diagnosis, and prioritized fixes.
