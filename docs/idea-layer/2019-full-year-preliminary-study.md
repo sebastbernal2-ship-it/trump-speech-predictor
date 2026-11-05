@@ -4,7 +4,7 @@
 
 ## Scope and target records
 
-The local Roll Call Factba.se candidate corpus contains **191 Trump speech/remarks records dated 2019-01-08 through 2019-12-25**, on **147 distinct dates**. The compact transcript phrase extractor returns at least one target phrase for **142 records** (117 distinct dates); **49 records have no extracted outcome** and are excluded from metric denominators. These are the records in the local candidate corpus, not a guarantee that every 2019 Trump speech is represented.
+The local Roll Call Factba.se candidate corpus contains **191 Trump speech/remarks records dated 2019-01-08 through 2019-12-25**, on **147 distinct dates**. The compact transcript phrase extractor returns at least one target phrase for **142 records** (117 distinct dates); **49 records have no extracted outcome** and are excluded from metric denominators. These are the records in the local candidate corpus, not a guarantee that every 2019 Trump speech is represented. A separate transcript-only LLM pilot generated cited open-vocabulary candidate atoms for these 49 records; see [`transcript-idea-atoms-pilot.md`](transcript-idea-atoms-pilot.md). It did not change this study's labels or metrics.
 
 The model predicts transcript-extracted issue phrases from archived context dated in `[event_date - 7 days, event_date)`. Target transcripts, event titles, locations, target-day sources, and later sources are not features. The training set contains **641 labeled 2016–2018 events**; the 2016-01-07 record is excluded because the All the News archive begins on 2016-01-01 and cannot provide its full preceding week. All 2019 outcomes are held out from training and hyperparameter selection.
 
