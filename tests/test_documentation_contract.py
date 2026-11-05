@@ -38,11 +38,13 @@ def test_canonical_task_and_package_description_stay_aligned() -> None:
     summary = (ROOT / "README.md").read_text(encoding="utf-8").lower()
     context = (ROOT / "CONTEXT.md").read_text(encoding="utf-8").lower()
     metadata = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert "seven days before that event" in spec
+    assert "seven days before the event" in spec
+    assert "frozen comparison baseline" in spec
     assert "seven days before" in summary
-    assert "seven days before" in context
+    assert "seven-day window" in context
+    assert "story-graph research track" in context
     description = metadata["project"]["description"].lower()
-    assert "preceding-week news context" in description
+    assert "pre-event news context" in description
     assert "continuation" not in description
 
 

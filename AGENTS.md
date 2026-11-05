@@ -2,11 +2,11 @@
 
 ## Project alignment
 
-- The active objective is retrospective supervised prediction of speech ideas from news/context headlines published in the seven days before the target speech.
+- The objective is retrospective supervised prediction of speech ideas from pre-event news/context. The active seven-day headline classifier is a frozen benchmark, not an assumed optimal temporal horizon. A separate story-graph research track may model persistent stories, updates, and time-bounded entity profiles over broader pre-cutoff evidence; do not replace the baseline without a separately versioned chronological evaluation.
 - `docs/idea-layer/README.md` is the canonical task specification. Keep the root README and `CONTEXT.md` aligned with it.
 - A target event's transcript is its outcome/label, never its own prediction input. Earlier context/label pairs may train predictions for later events.
-- Speaker-history recurrence, prior-speech-only forecasting, continuation, speech planning, live capture, and Trump-post archives are not the active objective. Do not extend those prototypes unless explicitly asked.
-- Preserve ignored local data and artifacts. Never stage or push them.
+- Speaker-history recurrence, prior-speech-only forecasting, continuation, speech planning, and live capture are not target-event features. Entity profiles are explicitly requested as graph context, but must be generic, source-backed, time-bounded, and filtered as of each event cutoff. Prior speech transcripts and recurrence remain excluded unless a distinct feature set is specified and evaluated.
+- Preserve ignored local data and artifacts. Never stage or push them. Graph source IDs must resolve to immutable evidence records; unknown publication/availability timing must remain marked unverified.
 
 ## Required delivery workflow
 

@@ -1,6 +1,6 @@
 # Active architecture
 
-## Context-to-ideas supervised pipeline
+## Frozen seven-day context-to-ideas baseline
 
 ```text
 historical event context snapshot
@@ -10,6 +10,23 @@ historical event context snapshot
                  └─ ranked idea IDs + model scores
                       └─ compare against target-speaker transcript idea labels
 ```
+
+This remains the frozen benchmark, not a justified optimal time horizon.
+
+## Experimental story-graph input representation
+
+```text
+source evidence ledger (publication + observed/available time + provenance)
+  └─ article observations (keep every source edition)
+       ├─ exact duplicate / syndication relations
+       ├─ update, correction, and related-story relations with confidence
+       └─ entity mentions + dated, cited entity-profile claims
+            └─ strict as-of graph projection at target cutoff
+                 └─ future: candidate-conditioned typed message passing / Q-GNN
+                      └─ ranked ideas with story paths and source citations
+```
+
+`story_graph.py` currently validates typed nodes/edges, source-ledger references, temporal validity, content hashes, and strict or explicitly retrospective as-of projections. Clustering, update detection, entity-profile ingestion, adaptive horizon/relevance learning, and Q-GNN are not implemented. See [`idea-layer/story-graph-architecture.md`](idea-layer/story-graph-architecture.md) for the contract and phase boundaries.
 
 Training examples are chronological pairs `(pre-event context, realized transcript ideas)`. For any scored event, fit only on examples from strictly earlier event dates. Group all events from the same date so they do not teach each other's predictions. The target transcript is outcome-only for its own event. It can be training supervision for later events.
 

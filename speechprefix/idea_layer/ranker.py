@@ -1,9 +1,10 @@
-"""Provider-neutral proposal validation and transparent evidence-weighted ranking.
+"""Legacy provider-neutral proposal ranking with transparent hand-set weights.
 
-This baseline ranks already-proposed ideas. It does not generate semantic
-candidates, verify that citations entail an idea, or estimate probabilities;
-proposal generation can be supplied by a human or a separately versioned model
-that consumes the frozen snapshot.
+This baseline ranks already-proposed ideas. Its source multipliers and 14-day
+recency half-life are illustrative constants, not data-derived estimates. It
+does not generate semantic candidates, verify that citations entail an idea,
+or estimate probabilities. The story-graph research track must not inherit
+these weights without separate chronological validation.
 """
 
 from __future__ import annotations

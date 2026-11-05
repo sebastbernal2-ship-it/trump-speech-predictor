@@ -20,6 +20,8 @@ The model predicts transcript-extracted issue phrases from archived context date
 
 **RealNews** ([Hugging Face](https://huggingface.co/datasets/Hieuman/realnews)), pinned at dataset revision `e4ebb4e796a27cb7f32c23c6c9cb738d8fc78489` and Parquet conversion revision `46f95222dc6f36f19a5969f3ce5ff219b182379d`, has 32,797,763 rows in 79.3 GB of converted Parquet. A small remote probe confirmed publication-date and WARC-capture fields, but an attempted event-window scan was stopped by an HTTP 429 resolver rate limit while opening shard `0009`; no full corpus or event-window output was retained, and no 2019 coverage conclusion is available. The dataset card declares no license. The All the News 2.1 and CC-News cards also do not establish clear reuse rights; both were retained and used locally at the user's request. Raw corpora and derived text remain Git-ignored and are not included in this repository change.
 
+A separate conservative identity-reduction probe hashed normalized All the News article bodies to quantify exact repeated content; bodies were not model inputs and no text was emitted. Results and limitations are documented in [`story-graph-architecture.md`](story-graph-architecture.md).
+
 ## Context-window coverage
 
 Each figure below sums eligible source rows across all 191 target-event windows, so a story/post can recur in overlapping windows.
