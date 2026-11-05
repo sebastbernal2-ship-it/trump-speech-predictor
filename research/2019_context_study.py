@@ -31,7 +31,7 @@ from speechprefix.stages.ideas.model import _features, _fit, _label_names, _metr
 
 EVENTS_DEFAULT = ROOT / "data/rollcall-by-type/trump-speech-candidates.jsonl"
 ARCHIVES_DEFAULT = ROOT / "data/source-archives"
-OUTPUT_DEFAULT = ARCHIVES_DEFAULT / "2019-full-year-context-study-v1"
+OUTPUT_DEFAULT = ARCHIVES_DEFAULT / "2019-full-year-context-study-v2-exact-body-dedup"
 TRAIN_YEARS = {"2016", "2017", "2018"}
 TARGET_YEAR = "2019"
 MODEL_CONFIG = {
@@ -47,6 +47,8 @@ PROFILES = {
     "news_two_source": ("abc_headlines", "all_the_news_2_1"),
     "trump_twitter_only": ("trump_twitter",),
     "news_plus_trump_twitter": ("abc_headlines", "all_the_news_2_1", "trump_twitter"),
+    "all_the_news_exact_body_deduplicated": ("all_the_news_2_1_body_dedup",),
+    "news_two_source_exact_body_deduplicated": ("abc_headlines", "all_the_news_2_1_body_dedup"),
 }
 
 
@@ -143,6 +145,8 @@ def _create_source_tables(con: duckdb.DuckDBPyConnection, archives: Path) -> dic
             try_cast(substr(date, 1, 10) AS DATE) AS published_day,
             date AS published_at,
             trim(title) AS title,
+            CASE WHEN nullif(trim(article), '') IS NULL THEN NULL
+                 ELSE sha256(lower(regexp_replace(trim(article), '[[:space:]]+', ' ', 'g'))) END AS body_sha256,
             coalesce(nullif(trim(publication), ''), 'Unknown publisher') AS publisher,
             nullif(trim(url), '') AS source_url,
             coalesce(nullif(trim(url), ''), 'dataset://all-the-news-2-1/' || sha256(
@@ -209,13 +213,37 @@ def _event_table(con: duckdb.DuckDBPyConnection, events: list[dict[str, Any]]) -
 
 def _source_stats_and_candidates(
     con: duckdb.DuckDBPyConnection, events: list[dict[str, Any]], table: str,
+    *, deduplicate_by_body: bool = False,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+    has_article_body = table == "all_the_news_2_1"
+    body_column = "s.body_sha256" if has_article_body else "NULL::VARCHAR"
+    body_stats = (
+        "count(s.body_sha256)::BIGINT AS nonempty_body_count, "
+        "count(DISTINCT s.body_sha256)::BIGINT AS distinct_body_hash_count, "
+        "(count(s.body_sha256) - count(DISTINCT s.body_sha256))::BIGINT AS body_duplicate_excess_rows"
+        if has_article_body else
+        "0::BIGINT AS nonempty_body_count, 0::BIGINT AS distinct_body_hash_count, 0::BIGINT AS body_duplicate_excess_rows"
+    )
+    body_dedup_ctes = """
+        body_ranked AS (
+            SELECT *, row_number() OVER (
+                PARTITION BY event_id, body_sha256
+                ORDER BY published_day DESC, published_at DESC, title, source_url
+            ) AS body_rank
+            FROM pooled WHERE body_sha256 IS NOT NULL
+        ), after_body AS (
+            SELECT * FROM body_ranked WHERE body_rank = 1
+            UNION ALL
+            SELECT *, 1 AS body_rank FROM pooled WHERE body_sha256 IS NULL
+        ),
+    """ if deduplicate_by_body else """after_body AS (SELECT * FROM pooled),"""
     stats_rows = _query_rows(con, f"""
         SELECT e.event_id,
                count(s.title)::BIGINT AS source_count,
                count(DISTINCT lower(trim(s.title)))::BIGINT AS distinct_title_count,
                count(DISTINCT nullif(trim(s.source_url), ''))::BIGINT AS distinct_url_count,
                count(DISTINCT nullif(trim(s.publisher), ''))::BIGINT AS publisher_count,
+               {body_stats},
                min(s.published_day)::VARCHAR AS earliest_source_day,
                max(s.published_day)::VARCHAR AS latest_source_day
         FROM target_events e
@@ -227,24 +255,27 @@ def _source_stats_and_candidates(
     stats = {row["event_id"]: {
         key: row[key] for key in (
             "source_count", "distinct_title_count", "distinct_url_count", "publisher_count",
+            "nonempty_body_count", "distinct_body_hash_count", "body_duplicate_excess_rows",
             "earliest_source_day", "latest_source_day",
         )
     } for row in stats_rows}
 
     candidate_rows = _query_rows(con, f"""
-        WITH eligible AS (
+        WITH pooled AS (
             SELECT e.event_id, s.title, s.published_at, s.published_day, s.publisher,
-                   s.source_url, s.source_id,
-                   row_number() OVER (
-                       PARTITION BY e.event_id, lower(trim(s.title))
-                       ORDER BY s.published_day DESC, s.published_at DESC, s.title, s.source_url
-                   ) AS same_title_rank
+                   s.source_url, s.source_id, {body_column} AS body_sha256
             FROM target_events e
             JOIN {table} s
               ON s.published_day >= e.event_date - INTERVAL 7 DAY
              AND s.published_day < e.event_date
+        ), {body_dedup_ctes} title_ranked AS (
+            SELECT *, row_number() OVER (
+                PARTITION BY event_id, lower(trim(title))
+                ORDER BY published_day DESC, published_at DESC, title, source_url
+            ) AS title_rank
+            FROM after_body
         ), deduplicated AS (
-            SELECT * FROM eligible WHERE same_title_rank = 1
+            SELECT * FROM title_ranked WHERE title_rank = 1
         ), ranked AS (
             SELECT *, row_number() OVER (
                 PARTITION BY event_id
@@ -253,7 +284,7 @@ def _source_stats_and_candidates(
             FROM deduplicated
         )
         SELECT event_id, title, published_at, published_day::VARCHAR AS published_day,
-               publisher, source_url, source_id
+               publisher, source_url, source_id, body_sha256
         FROM ranked WHERE headline_rank <= {MODEL_CONFIG['headlines_per_source']}
         ORDER BY event_id, published_day DESC, published_at DESC, title, source_url
     """)
@@ -265,13 +296,15 @@ def _source_stats_and_candidates(
             "publisher": row["publisher"],
             "source_id": row["source_id"],
             "source_url": row["source_url"],
+            "body_sha256": row["body_sha256"],
             "date_precision": "calendar-day" if table == "abc_headlines" else "timestamp-string-without-verified-timezone",
             "source_dataset": table,
         })
     for event in events:
         stats.setdefault(event["event_id"], {
             "source_count": 0, "distinct_title_count": 0, "distinct_url_count": 0,
-            "publisher_count": 0, "earliest_source_day": None, "latest_source_day": None,
+            "publisher_count": 0, "nonempty_body_count": 0, "distinct_body_hash_count": 0,
+            "body_duplicate_excess_rows": 0, "earliest_source_day": None, "latest_source_day": None,
         })
     return stats, candidates
 
@@ -280,7 +313,7 @@ def _features_by_profile(
     event_date: str, source_candidates: dict[str, list[dict[str, Any]]],
 ) -> dict[str, set[str]]:
     per_source = {}
-    for name in ("abc_headlines", "all_the_news_2_1", "trump_twitter"):
+    for name in ("abc_headlines", "all_the_news_2_1", "all_the_news_2_1_body_dedup", "trump_twitter"):
         snapshot = {"event_date": event_date, "candidate_sources": source_candidates.get(name, [])}
         per_source[name] = _features(
             snapshot,
@@ -291,6 +324,8 @@ def _features_by_profile(
         "abc_only": per_source["abc_headlines"],
         "all_the_news_only": per_source["all_the_news_2_1"],
         "news_two_source": per_source["abc_headlines"] | per_source["all_the_news_2_1"],
+        "all_the_news_exact_body_deduplicated": per_source["all_the_news_2_1_body_dedup"],
+        "news_two_source_exact_body_deduplicated": per_source["abc_headlines"] | per_source["all_the_news_2_1_body_dedup"],
         "trump_twitter_only": per_source["trump_twitter"],
         "news_plus_trump_twitter": per_source["abc_headlines"] | per_source["all_the_news_2_1"] | per_source["trump_twitter"],
     }
@@ -337,6 +372,9 @@ def run(events_path: Path, archives: Path, output: Path) -> dict[str, Any]:
         stats_by_source[source_name], candidates_by_source[source_name] = _source_stats_and_candidates(
             con, event_rows, table,
         )
+    stats_by_source["all_the_news_2_1_body_dedup"], candidates_by_source["all_the_news_2_1_body_dedup"] = _source_stats_and_candidates(
+        con, event_rows, "all_the_news_2_1", deduplicate_by_body=True,
+    )
 
     labels_by_id: dict[str, set[str]] = {}
     target_ideas_by_id: dict[str, list[dict[str, Any]]] = {}
@@ -356,13 +394,13 @@ def run(events_path: Path, archives: Path, output: Path) -> dict[str, Any]:
             labels_by_id[event_id] = {idea["idea_id"] for idea in outcome}
             target_ideas_by_id[event_id] = outcome
         snapshot_rows.append({
-            "schema_version": 1,
+            "schema_version": 2,
             "event_id": event_id,
             "event_date": event_date,
             "window_start_inclusive": window_start.isoformat(),
             "window_end_exclusive": event_date,
             "exploratory_only": True,
-            "retrieval_profile": "retrospective-local-archive-date-filter-v1",
+            "retrieval_profile": "retrospective-local-archive-date-filter-v2-exact-body-dedup-ablation",
             "source_window_stats": {name: stats_by_source[name][event_id] for name in stats_by_source},
             "selected_sources": source_candidates,
         })
@@ -461,6 +499,10 @@ def run(events_path: Path, archives: Path, output: Path) -> dict[str, Any]:
                     source_name: stats_by_source[source_name][event_id]["source_count"]
                     for source_name in source_names
                 },
+                "selected_context_item_counts": {
+                    source_name: len(candidates_by_source[source_name][event_id])
+                    for source_name in source_names
+                },
                 "target_idea_count": len(target_labels),
                 "candidate_coverage": model_metrics["candidate_coverage"],
                 "unseen_target_ideas": int(model_metrics["unseen_target_ideas"]),
@@ -496,6 +538,11 @@ def run(events_path: Path, archives: Path, output: Path) -> dict[str, Any]:
                 "validation_grid": validation_rows,
             },
             "legacy_frozen_config": MODEL_CONFIG,
+            "preprocessing_variant": (
+                "deduplicate All the News 2.1 by exact normalized article-body hash, falling back to normalized title when body is missing"
+                if "exact_body_deduplicated" in profile else
+                "deduplicate by normalized headline title"
+            ),
             "aggregation_by_event": _mean_metrics([row["model_metrics"] for row in event_results]),
             "aggregation_by_distinct_event_date": _mean_metrics_by_date(event_results, "model_metrics"),
             "legacy_frozen_model_aggregation_by_event": _mean_metrics([row["legacy_frozen_model_metrics"] for row in event_results]),
@@ -516,8 +563,8 @@ def run(events_path: Path, archives: Path, output: Path) -> dict[str, Any]:
             })
 
     window_report = {
-        "schema_version": 1,
-        "report_type": "2019-full-year-source-window-coverage",
+        "schema_version": 2,
+        "report_type": "2019-full-year-source-window-coverage-exact-body-dedup-ablation",
         "event_corpus_sha256": _sha256(events_path),
         "event_window_count_2016_2019": len(event_rows),
         "2019_target_event_count": len(target_inventory),
@@ -532,19 +579,19 @@ def run(events_path: Path, archives: Path, output: Path) -> dict[str, Any]:
                 "mean_records_per_event": sum(stats_by_source[name][row["event_id"]]["source_count"] for row in target_inventory) / max(1, len(target_inventory)),
                 "min_records_per_event": min(stats_by_source[name][row["event_id"]]["source_count"] for row in target_inventory),
                 "max_records_per_event": max(stats_by_source[name][row["event_id"]]["source_count"] for row in target_inventory),
-            } for name in stats_by_source
+            } for name in stats_by_source if name != "all_the_news_2_1_body_dedup"
         },
         "target_event_inventory": target_inventory,
         "date_policy": "Use source publication calendar dates in [event_date - 7 days, event_date); exclude same-day and later material. Timestamps without timezone are treated as date-only for eligibility.",
         "availability_warning": "These archives were retrieved retrospectively. A pre-event publication date does not prove the item was visible, indexed, or available before the speech.",
     }
     evaluation_report = {
-        "schema_version": 1,
-        "report_type": "2019-calendar-year-context-to-idea-preliminary-ablation",
+        "schema_version": 2,
+        "report_type": "2019-calendar-year-context-to-idea-exact-body-dedup-ablation",
         "task": "Predict automatically extracted transcript issue phrases for 2019 events using only source text dated in the preceding seven days; train on 2016–2018 paired context/label events with complete source-window coverage.",
         "target_year": 2019,
         "target_policy": f"{ISSUE_PHRASE_EXTRACTOR_VERSION}; weak compact lexical matches, not semantic gold or human annotation.",
-        "input_policy": "No target transcript, event title, event location, same-day source, or future source is an input. Model feature documents use up to 20 recent distinct items per source. Twitter text is a separate input ablation, not merged into the headline-only baseline.",
+        "input_policy": "No target transcript, event title, event location, same-day source, or future source is an input. Model feature documents use up to 20 recent items per source. The exact-body-deduplicated profiles collapse identical normalized All the News article-body hashes before the cap, while using only the retained headline titles as model features; body text and hashes are not model features. Twitter text remains a separate input ablation.",
         "training_policy": "Fixed year holdout: labeled 2016–2018 events whose full seven-day windows fall within the All the News 2.1 archive date coverage; no 2019 outcomes are used for fitting or configuration selection.",
         "legacy_frozen_config": MODEL_CONFIG,
         "configuration_selection": "Each source profile tunes alpha, minimum feature document frequency, and temperature on a chronological validation segment of 2016–2018 only; the 2019 target year is excluded from tuning. The legacy v7 settings are also reported as a frozen comparison.",
@@ -558,14 +605,16 @@ def run(events_path: Path, archives: Path, output: Path) -> dict[str, Any]:
             "Trump tweet timestamps have no timezone and the archive may contain later-deleted posts without deletion times; the Twitter profiles are exploratory only.",
             "CC-News dataset card claims coverage through December 2019, but the retained Hugging Face snapshot has only two rows with 2019 publication dates; it is not included in model profiles.",
             "The HuffPost dataset ends in 2018 and the Stiles Truth Social archive begins in 2022, so neither supplies 2019 input.",
+            "Exact normalized article-body hashes can collapse boilerplate or other identical text that is not a single evolving story; the deduplicated profile is a conservative exact-match ablation, not a semantic clusterer.",
+            "This ablation still uses the same seven-day window and fixed 20-item source cap to isolate exact-body deduplication; it does not test adaptive horizons, update detection, or entity profiles.",
         ],
     }
     for profile in evaluations:
         evaluation_report["profiles"][profile]["model_sha256"] = model_hashes[profile]
 
-    _write_jsonl(output / "event-source-windows-v1.jsonl", snapshot_rows)
-    _write_json(output / "2019-target-inventory-v1.json", window_report)
-    _write_json(output / "2019-preliminary-model-evaluation-v1.json", evaluation_report)
+    _write_jsonl(output / "event-source-windows-v2.jsonl", snapshot_rows)
+    _write_json(output / "2019-target-inventory-v2.json", window_report)
+    _write_json(output / "2019-exact-body-dedup-evaluation-v2.json", evaluation_report)
     archive_manifests = {}
     for name in (
         "abc-million-headlines-2003-2021", "all-the-news-2-1-hf-a1f7e19b",
@@ -583,7 +632,7 @@ def run(events_path: Path, archives: Path, output: Path) -> dict[str, Any]:
         "source_manifest_sha256": archive_manifests,
         "output_sha256": {
             name: _sha256(output / name)
-            for name in ("event-source-windows-v1.jsonl", "2019-target-inventory-v1.json", "2019-preliminary-model-evaluation-v1.json")
+            for name in ("event-source-windows-v2.jsonl", "2019-target-inventory-v2.json", "2019-exact-body-dedup-evaluation-v2.json")
         },
         "outputs_local_only": True,
     }
