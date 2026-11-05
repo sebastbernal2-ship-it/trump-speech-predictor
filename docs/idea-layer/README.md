@@ -60,7 +60,7 @@ The next input-representation experiment is to preserve individual articles whil
 - Keep event dates and source publication dates explicit. Same-day date-only headlines are excluded.
 - Do not use headline summaries, locations, event titles, or metadata unless explicitly included in a separately versioned feature set and timestamped as available; the current classifier uses headline titles only.
 - Preserve raw evidence and immutable run outputs; never overwrite local snapshots or evaluation artifacts.
-- The phrase extractor is a weak target-label mechanism. It is not exhaustive or semantic gold. Preserve misses and uncertainty; do not claim accuracy beyond the specified label task.
+- The phrase extractor is a weak target-label mechanism. It is not exhaustive or semantic gold. Preserve misses and uncertainty; do not claim accuracy beyond the specified label task. A transcript-only open-vocabulary extraction pilot for the 49 weak-label-empty 2019 records is documented in [`transcript-idea-atoms-pilot.md`](transcript-idea-atoms-pilot.md); it is AI-authored diagnostic data and has not replaced the existing labels.
 - Transcript interpretation or semantic matching is AI-only. Assistant-reviewed labels are references, not objective truth. See [`ai-review-policy.md`](ai-review-policy.md).
 - Additional input-source availability and leakage audit (including the Twitter archive and the UCSB crawler restriction): [`input-source-audit.md`](input-source-audit.md). A separate 2019 local-source backtest is documented in [`2019-full-year-preliminary-study.md`](2019-full-year-preliminary-study.md); it is diagnostic and does not update the active headline-only classifier.
 
