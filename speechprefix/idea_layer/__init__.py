@@ -27,6 +27,7 @@ from .semantic_forecast import (
     validate_semantic_prompt,
     validate_semantic_proposal_set,
 )
+from .story_graph import seal_story_graph, story_graph_as_of, validate_story_graph
 
 __all__ = [
     "append_source_items",
@@ -44,6 +45,7 @@ __all__ = [
     "rank_pre_speech_ideas",
     "rank_semantic_idea_proposals",
     "seal_pre_speech_forecast",
+    "seal_story_graph",
     "seal_idea_proposal_set",
     "retrieve_google_news_evidence",
     "validate_event_manifest",
@@ -53,5 +55,7 @@ __all__ = [
     "validate_pre_speech_forecast",
     "validate_semantic_prompt",
     "validate_semantic_proposal_set",
+    "validate_story_graph",
+    "story_graph_as_of",
     "validate_source_evidence",
 ]

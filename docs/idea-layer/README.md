@@ -4,14 +4,16 @@ This is the canonical project specification. Root `README.md` and `CONTEXT.md` s
 
 ## Objective
 
-For a historical Trump speech, predict the ideas he will address from news/context headlines published during the **seven days before that event**. Train and tune offline on the available historical input/output pairs. No live or upcoming event is required.
+For a historical Trump speech, predict the ideas he will address from news/context available strictly before the event. The active headline classifier uses the **seven days before the event** as a frozen comparison baseline, not as an established optimal horizon. A separate story-graph research track will preserve older active stories, updates, and entity connections, then learn or validate their relevance using chronological data. No live or upcoming event is required.
 
-Each event is a supervised example:
+Each event is a supervised example. For the frozen baseline:
 
 ```text
-X(event) = pre-event context headlines from [event_date - 7 days, event_date)
-y(event) = ideas expressed in the target-speaker transcript
+X7(event) = pre-event headline titles from [event_date - 7 days, event_date)
+y(event)  = ideas expressed in the target-speaker transcript
 ```
+
+The experimental story-graph representation may include older source observations that remain relevant through a story's development, but every observation/relation must be available before the event cutoff. It will be evaluated separately against the same outcome definition.
 
 The transcript is the realized outcome, not a feature. For event `i`, never use its transcript, extracted labels, post-event material, or later context to make its prediction. Earlier examples' paired inputs and outcome labels may train the model for later examples. **Earlier speech text, historical phrase frequency, and speaker-history features are not predictor inputs.**
 
@@ -48,6 +50,10 @@ Artifacts are local and Git-ignored:
 - Corrected-loss all-headline report/model: `data/rollcall-context-to-idea-evaluation-v4.json` — SHA-256 `e5bdb26713fe8ec8ecec885da89599d41aa3c0a80f1f25b75114a4a120c9ab7c`
 - Superseded recent-headline report with date-tie ordering bug: `data/rollcall-context-to-idea-evaluation-v5.json` — SHA-256 `fccae70aa7610f1b4dd7f4f0f3dafeee93b0ca10ad410cfb5ae2efcc1408acf0`
 - Current stable-order model and selection audit: `data/rollcall-context-to-idea-evaluation-v7.json` — SHA-256 `5589eb462e6db386a972393822192b36f449ed88b5668d930442821391b5fd87`
+
+## Story-level context and graph research
+
+The next input-representation experiment is to preserve individual articles while modeling exact duplicates, syndication, updates, related coverage, and time-bounded entity-profile claims as a heterogeneous graph. Its design and strict as-of boundary are in [`story-graph-architecture.md`](story-graph-architecture.md). The graph contract currently validates provenance, temporal fields, hashes, and cutoff projection; story clustering, learned weighting, entity-profile ingestion, and Q-GNN remain unimplemented. Do not change the active seven-day model until a separately versioned chronological comparison is complete.
 
 ## Data/review rules
 
