@@ -65,6 +65,7 @@ data/rollcall-speaker-idea-forecast-*.json
 data/idea-layer/
 data/rollcall-transcript-idea-audit-*.json
 data/rollcall-idea-semantic-forecast-match-*.jsonl
+data/source-archives/
 checkpoints/
 .DS_Store
 

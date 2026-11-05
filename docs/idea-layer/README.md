@@ -56,6 +56,7 @@ Artifacts are local and Git-ignored:
 - Preserve raw evidence and immutable run outputs; never overwrite local snapshots or evaluation artifacts.
 - The phrase extractor is a weak target-label mechanism. It is not exhaustive or semantic gold. Preserve misses and uncertainty; do not claim accuracy beyond the specified label task.
 - Transcript interpretation or semantic matching is AI-only. Assistant-reviewed labels are references, not objective truth. See [`ai-review-policy.md`](ai-review-policy.md).
+- Additional input-source availability and leakage audit (including authorized Twitter archive data and the UCSB crawler restriction): [`input-source-audit.md`](input-source-audit.md). The active classifier remains headline-only until a separately versioned post-source ablation is implemented and evaluated.
 
 ## Explicitly out of scope
 
