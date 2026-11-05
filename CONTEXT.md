@@ -2,18 +2,18 @@
 
 ## Objective
 
-Build and evaluate a **retrospective supervised model** that predicts ideas in a Trump speech from context/news in the seven days before that speech. Use historical input→output examples to train and tune. No upcoming speech or live deployment is required.
+Build and evaluate a **retrospective supervised model** that predicts ideas in a Trump speech from pre-event news and context. The current headline model's seven-day window is a frozen benchmark, not an assumed optimal horizon; a separate story-graph research track will represent duplicates, updates, persistent stories, and time-bounded entity connections from broader pre-cutoff evidence. Use historical input→output pairs to train and tune. No upcoming speech or live deployment is required.
 
 ## Non-negotiable feature/label boundary
 
 For event *i*:
 
-- **Features:** event *i*'s pre-event context/news headlines from the preceding seven days (and only other context explicitly declared available before that event).
+- **Baseline features:** event *i*'s pre-event headlines from the preceding seven days. A separate story-graph experiment may retain older evidence and evolving-story links, but only as-of the target cutoff and with temporal relevance evaluated chronologically.
 - **Label/outcome:** ideas expressed in event *i*'s target-speaker transcript.
 - **Forbidden same-event leakage:** the target transcript, transcript-derived labels, post-event material, or future context must never be features for predicting event *i*.
 - Earlier examples' context and transcript-derived labels are supervised training pairs. Earlier speech text or historical idea recurrence is not an inference feature for the target event.
 
-The active CLI is `context-idea-classifier-evaluate`; implementation lives under `speechprefix/forecasting/`. See `docs/idea-layer/README.md` for the objective, run command, data boundaries, current result, and limitations. `docs/README.md` is the documentation map.
+The active CLI is `context-idea-classifier-evaluate`; the baseline model is in `speechprefix/stages/ideas/model.py`. The experimental graph contract is in `speechprefix/idea_layer/story_graph.py`; it does not yet cluster or score news. See `docs/idea-layer/README.md` for the objective, baselines, data boundaries, current result, and limitations. `docs/README.md` is the documentation map.
 
 ## Evaluation and claims
 

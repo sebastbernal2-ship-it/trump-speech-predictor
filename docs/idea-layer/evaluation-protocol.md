@@ -4,7 +4,15 @@ This is the active evaluation contract for `context-idea-classifier-evaluate`.
 
 ## Example and leakage boundary
 
-For each event, use headline titles published from seven days before the event through the day before it. The target is the compact issue-phrase set extracted from the target-speaker transcript. The target transcript and any target-derived data are outcome-only for that event. Earlier examples' context/label pairs may train the model for later target dates. No earlier transcript text, prior issue-frequency feature, or speaker-history score enters the target event's feature vector.
+The frozen active baseline uses headline titles published from seven days before the event through the day before it. The new story-graph experiment is not restricted to that window: it may use the retained pre-cutoff archive, with story persistence, updates, and continuous time features represented explicitly. The target remains the compact issue-phrase set extracted from the target-speaker transcript. That transcript and all target-derived data are outcome-only for that event. Earlier examples' context/label pairs may train later predictions. No earlier transcript text, prior issue-frequency feature, or speaker-history score enters the target event's feature vector.
+
+## Story graph and temporal-weight evaluation
+
+- Keep every article/source observation; represent exact duplicates, syndication, updates, and related coverage as distinct typed relations. Do not treat duplicate outlet copies as independent corroboration or collapse substantive updates into duplicates.
+- For each chronological fold, construct or slice the graph using only source evidence and relation/profile facts available before that event's cutoff. Do not let future articles retroactively define an earlier story cluster. Record graph-builder/entity-resolution versions and their training cutoffs.
+- Compare the unchanged seven-day item-level baseline against deduplicated story-level and update-aware representations over broader pre-cutoff context. Do not assume a seven-/fourteen-day limit, source weight, or recency half-life is correct. Tune temporal attention/aggregation on validation folds only; report its selected parameters and sensitivity.
+- Report raw-item → exact-duplicate → syndication/update-candidate → story/development reductions; publisher diversity, repeated-copy volume, update cadence, context-age distributions, and per-event predictions/misses. Preserve cluster uncertainty and source citations.
+- Without human review, exact URL/content identities and synthetic tests can diagnose mechanical behavior, but do not call automatically generated semantic story clusters gold labels.
 
 ## Chronological training and evaluation
 
