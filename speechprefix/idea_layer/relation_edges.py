@@ -16,13 +16,54 @@ from .semantic_anchors import canonical_sha256 as anchor_canonical_sha256, valid
 from .transcript_outcomes import LINK_RELATIONS, validate_layered_outcome
 
 FINE_RELATIONS = frozenset(LINK_RELATIONS - {"expresses"})
+FINE_RELATION_TAXONOMY_VERSION = "fine-relation-taxonomy-v2"
 FINE_RELATION_DEFINITIONS = {
-    "supports": "The mention gives a reason, evidence, or substantive basis for the idea; mere topical relevance is insufficient.",
-    "illustrates": "The mention is a concrete instance or example of the idea, not merely another detail about it.",
-    "elaborates": "The mention adds a material specification or development of the idea without functioning mainly as evidence, an example, or a caveat.",
-    "qualifies": "The mention narrows, limits, conditions, corrects, or materially nuances the idea.",
-    "contextualizes": "The mention gives relevant setting or background but does not directly express, support, instantiate, expand, or qualify the idea.",
+    "supports": "Gives a reason, premise, or evidence for the idea; the connection can be paraphrased as ‘this is a reason to believe/act on the idea.’ Use for general evidence, not a concrete case presented as an example.",
+    "illustrates": "Presents a concrete case as an instance of the idea; the connection can be paraphrased as ‘here is the idea happening in a particular case.’ Prefer this to supports when the case is framed as an example.",
+    "elaborates": "Adds non-limiting scope, mechanism, or implementation detail to the idea; the connection can be paraphrased as ‘more specifically, the idea means/includes this.’ It is not mainly evidence or a concrete instance.",
+    "qualifies": "Changes the idea’s scope or truth conditions by limiting, conditioning, correcting, or stating an exception. Mere additional specification is not enough.",
+    "contextualizes": "Supplies relevant setting/background that aids interpretation but does not itself give a reason, instantiate the idea, specify its content, or alter its scope.",
 }
+FINE_RELATION_DECISION_RULES = [
+    "If the mention itself directly states the idea, represent that only as an expresses anchor; do not emit a fine edge for that pair.",
+    "Choose qualifies only when the mention restricts, conditions, corrects, or excepts the idea; a non-limiting implementation detail is elaborates.",
+    "Choose illustrates for a particular case explicitly serving as an instance; choose supports for general evidence or a reason. If that distinction is not clear, abstain.",
+    "Choose elaborates for general scope, mechanism, or implementation detail that changes what the idea includes without limiting/correcting it.",
+    "Choose contextualizes only for relevant background with no clear evidential, illustrative, specification, or limiting relation.",
+    "Emit at most one fine relation per mention/idea pair. If multiple labels remain plausible or no relation is clear, omit the edge.",
+]
+FINE_RELATION_BOUNDARY_EXAMPLES = [
+    {
+        "idea": "Extend evening bus service.",
+        "mention": "The last bus leaves at 9:45, although many hospital shifts end after 10.",
+        "relation": "supports",
+        "why": "General evidence/reason for extending service, not a particular case used as an example.",
+    },
+    {
+        "idea": "Extend evening bus service.",
+        "mention": "A nurse leaving the hospital at 10:30 has no bus and walks four miles home.",
+        "relation": "illustrates",
+        "why": "A particular case is presented as an instance of the service gap; do not choose supports merely because it is also persuasive.",
+    },
+    {
+        "idea": "Extend evening bus service.",
+        "mention": "The proposal would run hourly buses on routes 2 and 6 until midnight.",
+        "relation": "elaborates",
+        "why": "Adds general route and schedule details without narrowing or correcting a stated claim.",
+    },
+    {
+        "idea": "Extend evening bus service.",
+        "mention": "The extension would apply only on weekends.",
+        "relation": "qualifies",
+        "why": "The explicit ‘only’ limits the scope of the general proposal; absent that limitation, extra schedule detail would elaborate.",
+    },
+    {
+        "idea": "Extend evening bus service.",
+        "mention": "The city added two hospital districts as development spread westward.",
+        "relation": "contextualizes",
+        "why": "Relevant setting only; if the mention explicitly argues that growth makes evening service necessary, it would instead support the idea.",
+    },
+]
 _EDGE_ID = re.compile(r"^edge_[0-9a-f]{16}$")
 _HASH = re.compile(r"^[0-9a-f]{64}$")
 _ARTIFACT_TYPE = "layered-idea-relation-candidates"
@@ -114,6 +155,7 @@ def build_relation_candidate_record(
     engine_version: str,
     prompt_version: str,
     turns_by_id: dict[str, str],
+    taxonomy_version: str = FINE_RELATION_TAXONOMY_VERSION,
     attempt_count: int = 1,
     repair_errors: list[str] | None = None,
 ) -> dict[str, Any]:
@@ -143,6 +185,7 @@ def build_relation_candidate_record(
             "model": model,
             "engine_version": engine_version,
             "prompt_version": prompt_version,
+            "taxonomy_version": taxonomy_version,
             "attempt_count": attempt_count,
             "repair_errors": repair_errors or [],
         },
@@ -169,6 +212,7 @@ def build_relation_error_record(
     prompt_version: str,
     turns_by_id: dict[str, str],
     response_sha256: str | None = None,
+    taxonomy_version: str = FINE_RELATION_TAXONOMY_VERSION,
 ) -> dict[str, Any]:
     """Build an explicit failed-event row; failure is not a zero-edge result."""
     validate_layered_outcome(outcome, turns_by_id)
@@ -188,6 +232,7 @@ def build_relation_error_record(
             "model": model,
             "engine_version": engine_version,
             "prompt_version": prompt_version,
+            "taxonomy_version": taxonomy_version,
         },
         "attempt_count": attempt_count,
         "errors": errors,
@@ -230,10 +275,10 @@ def validate_relation_error_record(
     extractor = record.get("extractor")
     if not isinstance(extractor, dict):
         raise ValueError("extractor provenance must be an object")
-    allowed = {"provider", "model", "engine_version", "prompt_version", "response_sha256"}
+    allowed = {"provider", "model", "engine_version", "prompt_version", "taxonomy_version", "response_sha256"}
     if set(extractor) - allowed:
         raise ValueError("extractor provenance contains unsupported fields")
-    for field in ("provider", "model", "engine_version", "prompt_version"):
+    for field in ("provider", "model", "engine_version", "prompt_version", "taxonomy_version"):
         if not isinstance(extractor.get(field), str) or not extractor[field].strip():
             raise ValueError(f"extractor.{field} must be nonempty")
     if "response_sha256" in extractor and (
@@ -292,7 +337,7 @@ def validate_relation_candidate_record(
     if not isinstance(extractor, dict):
         raise ValueError("extractor provenance must be an object")
     allowed_extractor_fields = {
-        "provider", "model", "engine_version", "prompt_version", "response_sha256",
+        "provider", "model", "engine_version", "prompt_version", "taxonomy_version", "response_sha256",
         "attempt_count", "repair_errors",
     }
     if set(extractor) - allowed_extractor_fields:
@@ -304,6 +349,10 @@ def validate_relation_candidate_record(
         not isinstance(extractor["response_sha256"], str) or not _HASH.fullmatch(extractor["response_sha256"])
     ):
         raise ValueError("extractor.response_sha256 must be a lowercase SHA-256 digest")
+    if "taxonomy_version" in extractor and (
+        not isinstance(extractor["taxonomy_version"], str) or not extractor["taxonomy_version"].strip()
+    ):
+        raise ValueError("extractor.taxonomy_version must be nonempty")
     attempt_count = extractor.get("attempt_count", 1)
     repair_errors = extractor.get("repair_errors", [])
     if not isinstance(attempt_count, int) or isinstance(attempt_count, bool) or not 1 <= attempt_count <= 3:

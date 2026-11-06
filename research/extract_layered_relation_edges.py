@@ -18,7 +18,10 @@ from pathlib import Path
 from typing import Any
 
 from speechprefix.idea_layer.relation_edges import (
+    FINE_RELATION_BOUNDARY_EXAMPLES,
+    FINE_RELATION_DECISION_RULES,
     FINE_RELATION_DEFINITIONS,
+    FINE_RELATION_TAXONOMY_VERSION,
     build_relation_candidate_record,
     build_relation_error_record,
     direct_expression_anchors,
@@ -30,11 +33,11 @@ from speechprefix.idea_layer.transcript_outcomes import validate_layered_outcome
 
 ROOT = Path(__file__).resolve().parents[1]
 EVENTS_DEFAULT = ROOT / "data/rollcall-by-type/trump-speech-candidates.jsonl"
-ENGINE_VERSION = "layered-fine-relation-edge-pass-v2"
-PROMPT_VERSION = "frozen-expresses-anchors-fine-relations-v2"
+ENGINE_VERSION = "layered-fine-relation-edge-pass-v3"
+PROMPT_VERSION = "frozen-expresses-anchors-fine-relations-v3"
 PROVIDER = "openai-codex"
 MODEL = "gpt-6-luna"
-OUTPUT_DEFAULT = ROOT / "data/source-archives/layered-fine-relation-edge-candidates-v2.jsonl"
+OUTPUT_DEFAULT = ROOT / "data/source-archives/layered-fine-relation-edge-candidates-v3.jsonl"
 _SYSTEM_PROMPT = (
     "You are a conservative transcript-only relation annotator. Use only the supplied transcript and frozen nodes/anchors. "
     "Do not use tools, news, event identity, outside knowledge, or forecast labels. Return one JSON object and no markdown."
@@ -114,8 +117,13 @@ def _prompt(
 
 The direct-expression anchors are fixed input from a separate anchor pass. Do not add, remove, relabel, or reinterpret anchors; do not return `expresses`. Ideas listed as unanchored have no direct-expression anchor in that pass and are not eligible for fine edges. Your task is only to propose additional relations from a mention to an anchored idea.
 
-Relation definitions:
+Relation taxonomy version: {FINE_RELATION_TAXONOMY_VERSION}
+Definitions:
 {json.dumps(FINE_RELATION_DEFINITIONS, ensure_ascii=False, indent=2)}
+Decision rules:
+{json.dumps(FINE_RELATION_DECISION_RULES, ensure_ascii=False, indent=2)}
+Generic boundary examples:
+{json.dumps(FINE_RELATION_BOUNDARY_EXAMPLES, ensure_ascii=False, indent=2)}
 
 Guidance:
 - Return only clear, useful relations. A mention being in the same speech, topic, paragraph, or event is not enough.
@@ -269,6 +277,7 @@ def run(
                     engine_version=ENGINE_VERSION,
                     prompt_version=PROMPT_VERSION,
                     turns_by_id=turns_by_id,
+                    taxonomy_version=FINE_RELATION_TAXONOMY_VERSION,
                     attempt_count=attempt + 1,
                     repair_errors=attempt_errors,
                 )
@@ -298,6 +307,7 @@ def run(
                 prompt_version=PROMPT_VERSION,
                 turns_by_id=turns_by_id,
                 response_sha256=last_response_hash,
+                taxonomy_version=FINE_RELATION_TAXONOMY_VERSION,
             )
             rows.append(error_record)
             errors.append({"event_id": event_id, "errors": attempt_errors})
@@ -316,6 +326,7 @@ def run(
         "created_at": datetime.now(timezone.utc).isoformat(),
         "engine_version": ENGINE_VERSION,
         "prompt_version": PROMPT_VERSION,
+        "taxonomy_version": FINE_RELATION_TAXONOMY_VERSION,
         "events_sha256": _sha256(event_bytes),
         "source_outcome_artifact_sha256": _sha256(outcomes_bytes),
         "source_anchor_artifact_sha256": _sha256(anchors_bytes),

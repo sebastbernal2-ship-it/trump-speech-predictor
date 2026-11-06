@@ -73,7 +73,7 @@ A subsequent, frozen 12-event 2020 test applied explicit anchor-agreement and re
 
 Before using these edges as graph features:
 
-1. Diagnose the frozen sample's anchor disagreements and relation-output validation failures without retrying/tuning on those events. Any prompt change must be a new version tested on a new frozen sample.
-2. Refine operational contrast examples for `supports` vs. `elaborates`, `illustrates`, and `contextualizes` using generic boundary cases, then freeze the definitions before another evaluation. Keep abstention available.
+1. Keep the failed 2020 sample frozen; do not retry/tune on those events. The two extraction validation failures and anchor disagreements remain diagnostic evidence.
+2. Use the now-frozen [`fine-relation-taxonomy-v2.md`](fine-relation-taxonomy-v2.md) on a **newly selected** sample only. Its contrastive examples are synthetic; they have not been scored or used to relabel the failed sample.
 3. Obtain a configured, funded second provider for the required independent model diagnostic; provider diversity still does not create semantic gold.
 4. Keep candidate relation edges out of the forecasting model. The active seven-day baseline remains unchanged.
