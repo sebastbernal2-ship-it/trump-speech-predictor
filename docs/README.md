@@ -4,7 +4,9 @@ These documents describe the active retrospective context-to-ideas project. Repo
 
 - [`../README.md`](../README.md) — objective, leakage boundary, quick start, and repository map.
 - [`idea-layer/README.md`](idea-layer/README.md) — canonical task definition, current data/result, and limitations.
-- [`idea-layer/layered-transcript-outcomes.md`](idea-layer/layered-transcript-outcomes.md) — transcript evidence/mention layer, idea targets, typed links, and pilot limitations.
+- [`idea-layer/layered-transcript-outcomes.md`](idea-layer/layered-transcript-outcomes.md) — transcript evidence/mention layer, idea targets, typed links, and initial pilot limitations.
+- [`idea-layer/layered-transcript-outcomes-v2-development.md`](idea-layer/layered-transcript-outcomes-v2-development.md) — v2 development run counts, retry provenance, mechanical checks, and long-transcript blocker.
+- [`idea-layer/idea-atom-definition-v1.md`](idea-layer/idea-atom-definition-v1.md) — operational idea unit, split/merge rules, and layer-specific evaluation implications.
 - [`idea-layer/story-graph-architecture.md`](idea-layer/story-graph-architecture.md) — evolving-story representation, temporal/provenance contract, and query-conditioned GNN design target.
 - [`idea-layer/input-source-audit.md`](idea-layer/input-source-audit.md) — input-source findings, coverage, and availability/rights caveats.
 - [`idea-layer/2019-full-year-preliminary-study.md`](idea-layer/2019-full-year-preliminary-study.md) — source coverage and preliminary 2019 calendar-year backtest diagnostics.

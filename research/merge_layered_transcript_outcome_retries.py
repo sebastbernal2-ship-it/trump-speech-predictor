@@ -103,7 +103,7 @@ def merge(*, events_path: Path, base_path: Path, retry_paths: list[Path], output
             continue
         if base.get("status") != "model_error":
             raise ValueError(f"refusing to replace non-error base row for {event_id}")
-        if retry.get("status") != "validated_candidate":
+        if retry.get("status") not in {"validated_candidate", "no_supported_idea", "insufficient_transcript"}:
             output_rows.append(base)
             continue
         if retry.get("source_record_sha256") != base.get("source_record_sha256"):
@@ -120,7 +120,7 @@ def merge(*, events_path: Path, base_path: Path, retry_paths: list[Path], output
     unknown = set(retry_by_id) - set(base_by_id)
     if unknown:
         raise ValueError(f"retry contains events missing from base: {sorted(unknown)}")
-    unresolved = [row.get("event_id") for row in output_rows if row.get("status") != "validated_candidate"]
+    unresolved = [row.get("event_id") for row in output_rows if row.get("status") == "model_error"]
     output_path = output_path.resolve()
     manifest_path = Path(str(output_path) + ".manifest.json")
     if output_path.exists() or manifest_path.exists():
