@@ -20,7 +20,7 @@ MENTION_ROLES = {
     "ceremonial_or_personal",
     "other",
 }
-SALIENCE_LEVELS = {"central", "secondary", "brief"}
+SALIENCE_LEVELS = {"central", "repeated", "secondary", "brief"}
 IDEA_KINDS = {
     "policy",
     "political",
@@ -43,9 +43,9 @@ def validate_layered_outcome(
     record: dict[str, Any],
     turns_by_id: dict[str, str],
     *,
-    max_mentions: int = 50,
-    max_ideas: int = 20,
-    max_links: int = 100,
+    max_mentions: int = 200,
+    max_ideas: int = 60,
+    max_links: int = 400,
 ) -> dict[str, Any]:
     """Validate a layered outcome row and its evidence against target-speaker turns.
 
@@ -55,7 +55,8 @@ def validate_layered_outcome(
     """
     if not isinstance(record, dict):
         raise LayeredOutcomeError("outcome must be an object")
-    if record.get("schema_version") != 1 or record.get("artifact_type") != "layered-transcript-outcome":
+    schema_version = record.get("schema_version")
+    if schema_version not in {1, 2} or record.get("artifact_type") != "layered-transcript-outcome":
         raise LayeredOutcomeError("unsupported layered outcome schema")
     if not isinstance(record.get("event_id"), str) or not record["event_id"]:
         raise LayeredOutcomeError("event_id must be nonempty")
@@ -144,6 +145,7 @@ def validate_layered_outcome(
     unique_links: set[tuple[str, str, str]] = set()
     linked_mentions: set[str] = set()
     linked_ideas: set[str] = set()
+    directly_expressed_ideas: set[str] = set()
     for index, link in enumerate(links):
         field = f"links[{index}]"
         if not isinstance(link, dict):
@@ -161,11 +163,15 @@ def validate_layered_outcome(
         unique_links.add(identity)
         linked_mentions.add(mention_id)
         linked_ideas.add(idea_id)
+        if relation == "expresses":
+            directly_expressed_ideas.add(idea_id)
         normalized_links.append({"mention_id": mention_id, "idea_id": idea_id, "relation": relation})
     if mention_ids - linked_mentions:
         raise LayeredOutcomeError(f"unlinked mentions: {sorted(mention_ids - linked_mentions)}")
     if idea_ids - linked_ideas:
         raise LayeredOutcomeError(f"ideas without transcript mentions: {sorted(idea_ids - linked_ideas)}")
+    if schema_version == 2 and idea_ids - directly_expressed_ideas:
+        raise LayeredOutcomeError(f"ideas without a direct expression anchor: {sorted(idea_ids - directly_expressed_ideas)}")
 
     result = dict(record)
     result["mentions"] = normalized_mentions
@@ -173,6 +179,7 @@ def validate_layered_outcome(
     result["links"] = normalized_links
     result["validation"] = {
         "structural_valid": True,
+        "direct_expression_anchor_validated": schema_version == 2,
         "exact_quote_integrity": True,
         "mention_count": len(normalized_mentions),
         "idea_count": len(normalized_ideas),

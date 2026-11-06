@@ -10,6 +10,7 @@ import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -25,11 +26,12 @@ from speechprefix.idea_layer.transcript_outcomes import validate_layered_outcome
 
 ROOT = Path(__file__).resolve().parents[1]
 EVENTS_DEFAULT = ROOT / "data/rollcall-by-type/trump-speech-candidates.jsonl"
-OUTPUT_DEFAULT = ROOT / "data/source-archives/2019-layered-transcript-outcomes-v1.jsonl"
+OUTPUT_DEFAULT = ROOT / "data/source-archives/2019-layered-transcript-outcomes-v2.3-zero-weak.jsonl"
 PROVIDER = "openai-codex"
 MODEL = "gpt-6-luna"
-EXTRACTOR_VERSION = "layered-transcript-outcomes-v1"
-_PROMPT_VERSION = "transcript-mentions-to-forecast-ideas-v1"
+EXTRACTOR_VERSION = "layered-transcript-outcomes-v2.3"
+IDEA_DEFINITION_VERSION = "independently-meaningful-idea-v1"
+_PROMPT_VERSION = "transcript-mentions-to-forecast-ideas-v5"
 _SYSTEM_PROMPT = (
     "You are a careful transcript-only research extractor. Return one JSON object and no markdown. "
     "Use only the supplied target-speaker transcript; do not use tools, news, event identity, or outside knowledge."
@@ -88,18 +90,46 @@ def _blind_turns(turns: list[dict[str, str]], case_id: str) -> tuple[list[dict[s
     return blind, blind_to_source
 
 
+def _normalized_token_alignment(quote: str, transcript_turn: str) -> str | None:
+    """Repair only case/punctuation variants when the normalized word sequence is unique."""
+    token_pattern = re.compile(r"\w+(?:['’]\w+)*", re.UNICODE)
+
+    def spans(text: str) -> list[tuple[str, int, int]]:
+        return [
+            (match.group().replace("’", "'").casefold(), match.start(), match.end())
+            for match in token_pattern.finditer(text)
+        ]
+
+    quote_tokens, source_tokens = spans(quote), spans(transcript_turn)
+    if len(quote_tokens) < 3 or len(quote_tokens) > len(source_tokens):
+        return None
+    needle = [token[0] for token in quote_tokens]
+    source_words = [token[0] for token in source_tokens]
+    matches = [
+        index for index in range(len(source_words) - len(needle) + 1)
+        if source_words[index:index + len(needle)] == needle
+    ]
+    if len(matches) != 1:
+        return None
+    start = source_tokens[matches[0]][1]
+    end = source_tokens[matches[0] + len(needle) - 1][2]
+    return transcript_turn[start:end]
+
+
 def _prompt(turns: list[dict[str, str]]) -> str:
     instructions = """Read every target-speaker turn. Produce TWO linked layers; do not flatten them into one list.
 
-Layer 1 — `mentions`: transcript-local substantive content units. Capture distinct expressed claims, positions, proposals, arguments, appeals, and meaningful event-specific subjects or supporting details. Keep relevant names/actions/examples when they carry meaning. Do not make separate units for routine greetings, applause, filler, or repeated wording. Each mention has a short faithful paraphrase, a role, salience, and exact evidence.
+Use this operational definition consistently. An **idea** is a distinct, independently meaningful unit of thought the speaker substantively addresses: a topic with meaningful development, a claim, argument, position, proposal, appeal, or event-specific subject treated as a focus. It should be possible to summarize it in one neutral sentence without inventing a motive. Split genuinely distinct positions/claims; do not split a single argument into its supporting facts. Repetition alone does not create a new idea. Names, statistics, anecdotes, examples, and ceremonial details are **mentions** when they support or illustrate another idea; make one into a separate idea only when the speaker treats it as an independently meaningful subject. A separate event-specific idea may be nonforecastable.
 
-Layer 2 — `ideas`: higher-level concepts/claims that could serve as retrospective idea-forecast targets. Group related mentions under one idea when they express/support the same concept. Do NOT promote every named person, example, statistic, anecdote, or ceremonial detail into a separate forecast idea. Conversely, do not merge genuinely distinct positions or arguments. An event-specific or ceremonial subject may be retained as an idea with `forecastable=false` if it is independently meaningful; forecastability is a separate, cautious judgment, not a test for whether something belongs in the transcript inventory.
+Layer 1 — `mentions`: transcript-local substantive content units. Capture the content that was said, including meaningful specifics and supporting details, so they can be inspected without becoming independent forecast labels. Do not create separate units for routine greetings, applause, filler, or repeated wording. Each mention has one short faithful paraphrase, a role, salience, and exact evidence.
 
-`links` connect each mention to at least one idea: `expresses` for direct expression; `supports`, `illustrates`, `elaborates`, `qualifies`, or `contextualizes` for its relation to the broader idea. One idea may have many mentions; one mention may connect to more than one idea only when warranted. Never create an idea without a supporting linked mention or a mention without a linked idea. Preserve exact quote provenance on mentions; ideas inherit evidence through links.
+Layer 2 — `ideas`: the defined independently meaningful units, abstracted only as far as the transcript warrants. Do not promote every mention to an idea, and do not omit event-specific ideas merely because they seem unforecastable. Forecastability is a separate, cautious judgment about whether pre-event context could plausibly support a forecast; it is not a test of whether the speaker addressed the idea.
 
-Mention roles: `core_expression`, `supporting_detail`, `illustrative_example`, `event_specific_detail`, `ceremonial_or_personal`, `other`. Salience: `central`, `secondary`, `brief`. Idea kinds: `policy`, `political`, `factual_claim`, `campaign_appeal`, `ceremonial`, `personal_anecdote`, `other`. Stances: `support`, `oppose`, `describe`, `unclear`. Idea prominence: `central`, `repeated`, `secondary`, `brief`.
+`links` connect each mention to at least one idea: `expresses` marks a mention that directly states the idea; `supports`, `illustrates`, `elaborates`, `qualifies`, or `contextualizes` connect supporting evidence/details. Every idea must have at least one `expresses` link; every mention and idea must be linked. A detail can directly express a distinct idea when its content itself is the idea; do not use `expresses` for mere examples or supporting facts. One idea may have many mentions; one mention may connect to more than one idea only when warranted. Preserve exact quote provenance on mentions; ideas inherit evidence through links. If content is ambiguous, use a narrower idea summary and mark stance `unclear` rather than infer.
 
-Every mention must cite 1–4 exact contiguous quotes copied from supplied turns, using their blind IDs. Exact quote equality will be checked mechanically. Aim for complete coverage of substantive speech content, not exhaustive sentence-by-sentence paraphrase. Use no more than 50 mentions, 20 ideas, and 100 links; do not add content merely to fill a quota. If no substantive content exists, empty arrays are allowed. No self-reported confidence field.
+Mention roles: `core_expression`, `supporting_detail`, `illustrative_example`, `event_specific_detail`, `ceremonial_or_personal`, `other`. Salience: `central`, `repeated`, `secondary`, `brief`. Idea kinds: `policy`, `political`, `factual_claim`, `campaign_appeal`, `ceremonial`, `personal_anecdote`, `other`. Stances: `support`, `oppose`, `describe`, `unclear`. Idea prominence: `central`, `repeated`, `secondary`, `brief`.
+
+Every mention must cite 1–4 exact contiguous quotes copied from supplied turns, using their blind IDs. Prefer a short 5–20 word span that directly supports the paraphrase; do not reconstruct or clean up a sentence. Copy case, spelling, and punctuation as shown. Exact quote equality will be checked mechanically. Aim for broad coverage of salient substantive content, not exhaustive sentence-by-sentence paraphrase. Use no more than 200 mentions, 60 ideas, and 400 links; do not add content merely to fill a quota. If no substantive content exists, empty arrays are allowed. No self-reported confidence field.
 
 Return exactly this JSON shape:
 {
@@ -108,7 +138,7 @@ Return exactly this JSON shape:
       "mention_id": "lowercase_snake_case_id",
       "text": "concise transcript-local paraphrase of one substantive content unit",
       "role": "core_expression" | "supporting_detail" | "illustrative_example" | "event_specific_detail" | "ceremonial_or_personal" | "other",
-      "salience": "central" | "secondary" | "brief",
+      "salience": "central" | "repeated" | "secondary" | "brief",
       "evidence": [{"turn_id": "blind ID", "exact_quote": "verbatim contiguous quote"}]
     }
   ],
@@ -148,7 +178,7 @@ def _parse_object(text: str) -> dict[str, Any]:
     raise ValueError("model response did not contain a JSON object")
 
 
-def _call_pi(prompt: str, *, model: str, timeout: int) -> str:
+def _call_pi(prompt: str, *, provider: str, model: str, timeout: int) -> str:
     executable = shutil.which("pi")
     if not executable:
         raise RuntimeError("pi CLI is required")
@@ -157,7 +187,7 @@ def _call_pi(prompt: str, *, model: str, timeout: int) -> str:
         prompt_path = Path(handle.name)
     try:
         result = subprocess.run([
-            executable, "--provider", PROVIDER, "--model", model, "--print", "--mode", "text",
+            executable, "--provider", provider, "--model", model, "--print", "--mode", "text",
             "--no-tools", "--no-extensions", "--no-mcp", "--no-skills", "--no-context-files",
             "--no-session", "--system-prompt", _SYSTEM_PROMPT, f"@{prompt_path}",
         ], cwd=ROOT, capture_output=True, text=True, timeout=timeout, check=False)
@@ -185,7 +215,10 @@ def _map_layered_result(
     coverage_note = value.get("coverage_note")
     if not isinstance(coverage_note, str):
         raise ValueError("coverage_note must be a string")
-    available_blind = {turn["turn_id"] for turn in blind_turns}
+    blind_turn_text = {turn["turn_id"]: turn["text"] for turn in blind_turns}
+    available_blind = set(blind_turn_text)
+    citation_repairs = []
+    citation_rejections = []
     mentions = []
     for mention in value["mentions"]:
         if not isinstance(mention, dict) or not isinstance(mention.get("evidence"), list):
@@ -194,10 +227,33 @@ def _map_layered_result(
         for citation in mention["evidence"]:
             if not isinstance(citation, dict) or citation.get("turn_id") not in available_blind:
                 raise ValueError("mention cites an unknown blind turn")
-            evidence.append({"turn_id": blind_to_source[citation["turn_id"]], "exact_quote": citation.get("exact_quote")})
+            blind_id = citation["turn_id"]
+            quote = citation.get("exact_quote")
+            source_turn = blind_turn_text[blind_id]
+            if not isinstance(quote, str):
+                citation_rejections.append({"mention_id": mention.get("mention_id"), "reason": "non_string_quote"})
+                continue
+            if quote not in source_turn:
+                aligned = _normalized_token_alignment(quote, source_turn)
+                if aligned is None:
+                    citation_rejections.append({
+                        "mention_id": mention.get("mention_id"),
+                        "reason": "not_exact_or_unique_token_match",
+                        "quote_sha256": _sha256(quote.encode("utf-8")),
+                    })
+                    continue
+                citation_repairs.append({
+                    "mention_id": mention.get("mention_id"),
+                    "method": "unique_normalized_token_sequence",
+                    "original_quote_sha256": _sha256(quote.encode("utf-8")),
+                })
+                quote = aligned
+            evidence.append({"turn_id": blind_to_source[blind_id], "exact_quote": quote})
+        if not evidence:
+            raise ValueError(f"mention {mention.get('mention_id')} has no exact transcript citation")
         mentions.append({**{key: item for key, item in mention.items() if key != "evidence"}, "evidence": evidence})
     record = {
-        "schema_version": 1,
+        "schema_version": 2,
         "artifact_type": "layered-transcript-outcome",
         **metadata,
         "mentions": mentions,
@@ -206,12 +262,18 @@ def _map_layered_result(
         "coverage_note": coverage_note.strip(),
     }
     turns_by_id = {blind_to_source[turn["turn_id"]]: turn["text"] for turn in blind_turns}
-    return validate_layered_outcome(record, turns_by_id)
+    validated = validate_layered_outcome(record, turns_by_id)
+    validated["citation_repairs"] = citation_repairs
+    validated["citation_rejections"] = citation_rejections
+    validated["validation"]["normalized_citation_count"] = len(citation_repairs)
+    validated["validation"]["rejected_citation_count"] = len(citation_rejections)
+    return validated
 
 
 def run(
     *, events_path: Path, output_path: Path, target_year: str = "2019", timeout: int = 240,
-    event_ids: set[str] | None = None, include_weak_labeled: bool = False, model: str = MODEL,
+    event_ids: set[str] | None = None, include_weak_labeled: bool = False,
+    provider: str = PROVIDER, model: str = MODEL,
 ) -> dict[str, Any]:
     events, event_bytes = _read_jsonl(events_path)
     indexed = {}
@@ -248,59 +310,71 @@ def run(
     for index, (event_id, event, turns, weak_count) in enumerate(selected, 1):
         blind_id = f"layered-case-{index:04d}"
         blind_turns, blind_to_source = _blind_turns(turns, blind_id)
-        prompt = _prompt(blind_turns)
+        transcript = "\n".join(f"{turn['turn_id']}\t{turn['text']}" for turn in turns)
+        metadata = {
+            "event_id": event_id,
+            "event_date": event.get("event_date"),
+            "source_record_sha256": _canonical_hash(event),
+            "target_transcript_sha256": _sha256(transcript.encode("utf-8")),
+            "target_speaker_turn_count": len(turns),
+            "target_speaker_word_count": sum(len(turn["text"].split()) for turn in turns),
+            "idea_definition_version": IDEA_DEFINITION_VERSION,
+            "weak_extractor": {
+                "version": ISSUE_PHRASE_EXTRACTOR_VERSION,
+                "lexicon_sha256": issue_phrase_lexicon_sha256(),
+                "idea_count": weak_count,
+            },
+            "extractor": {
+                "version": EXTRACTOR_VERSION,
+                "provider": provider,
+                "model": model,
+                "metadata_hidden": True,
+                "news_and_weak_labels_hidden": True,
+                "transcript_used_only_as_outcome": True,
+            },
+        }
         errors, validated, response_hash = [], None, None
-        for attempt in range(3):
-            response = ""
-            try:
-                response = _call_pi(prompt, model=model, timeout=timeout)
-                response_hash = _sha256(response.encode("utf-8"))
-                transcript = "\n".join(f"{turn['turn_id']}\t{turn['text']}" for turn in turns)
-                metadata = {
-                    "event_id": event_id,
-                    "event_date": event.get("event_date"),
-                    "source_record_sha256": _canonical_hash(event),
-                    "target_transcript_sha256": _sha256(transcript.encode("utf-8")),
-                    "target_speaker_turn_count": len(turns),
-                    "target_speaker_word_count": sum(len(turn["text"].split()) for turn in turns),
-                    "weak_extractor": {
-                        "version": ISSUE_PHRASE_EXTRACTOR_VERSION,
-                        "lexicon_sha256": issue_phrase_lexicon_sha256(),
-                        "idea_count": weak_count,
-                    },
-                    "extractor": {
-                        "version": EXTRACTOR_VERSION,
-                        "provider": PROVIDER,
-                        "model": model,
-                        "metadata_hidden": True,
-                        "news_and_weak_labels_hidden": True,
-                        "transcript_used_only_as_outcome": True,
-                    },
-                }
-                validated = _map_layered_result(
-                    _parse_object(response), blind_turns=blind_turns,
-                    blind_to_source=blind_to_source, metadata=metadata,
-                )
-                validated["model_response_sha256"] = response_hash
-                validated["model_attempts"] = attempt + 1
-                break
-            except (ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
-                errors.append(type(exc).__name__ + ": " + str(exc))
-                if attempt < 2:
-                    prompt += (
-                        "\n\nFORMAT REPAIR: The previous response failed validation with: " + str(exc)
-                        + ". Repair the previous response below; do not start over or repeat the invalid fields. Use only the allowed role/kind/stance/relation values, preserve valid content, "
-                        "and copy every evidence quote as an exact substring of its cited transcript turn. Return the required JSON only.\n"
-                        "PREVIOUS RESPONSE TO REPAIR:\n" + response
+        if not turns:
+            validated = _map_layered_result(
+                {"mentions": [], "ideas": [], "links": [], "coverage_note": "No target-speaker transcript turns were available."},
+                blind_turns=blind_turns, blind_to_source=blind_to_source, metadata=metadata,
+            )
+            validated["status"] = "insufficient_transcript"
+            validated["model_attempts"] = 0
+        else:
+            prompt = _prompt(blind_turns)
+            for attempt in range(3):
+                response = ""
+                try:
+                    response = _call_pi(prompt, provider=provider, model=model, timeout=timeout)
+                    response_hash = _sha256(response.encode("utf-8"))
+                    validated = _map_layered_result(
+                        _parse_object(response), blind_turns=blind_turns,
+                        blind_to_source=blind_to_source, metadata=metadata,
                     )
+                    if not validated["mentions"] and not validated["ideas"] and metadata["target_speaker_word_count"] > 500:
+                        raise ValueError("empty idea inventory for a substantial transcript; review the complete text and extract substantive units")
+                    validated["model_response_sha256"] = response_hash
+                    validated["model_attempts"] = attempt + 1
+                    break
+                except (ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
+                    errors.append(type(exc).__name__ + ": " + str(exc))
+                    if attempt < 2:
+                        prompt += (
+                            "\n\nFORMAT REPAIR: The previous response failed validation with: " + str(exc)
+                            + ". Repair the previous response below; do not start over or repeat the invalid fields. Use only the allowed role/kind/stance/relation values, preserve valid content, "
+                            "and copy every evidence quote as an exact substring of its cited transcript turn. Return the required JSON only.\n"
+                            "PREVIOUS RESPONSE TO REPAIR:\n" + response
+                        )
         if validated is None:
             output = {
-                "schema_version": 1, "artifact_type": "layered-transcript-outcome-error",
+                "schema_version": 2, "artifact_type": "layered-transcript-outcome-error",
                 "event_id": event_id, "event_date": event.get("event_date"),
                 "source_record_sha256": _canonical_hash(event), "status": "model_error", "errors": errors,
             }
         else:
-            validated["status"] = "validated_candidate"
+            if validated.get("status") != "insufficient_transcript":
+                validated["status"] = "validated_candidate" if validated["mentions"] else "no_supported_idea"
             output = validated
         results.append(output)
         print(f"[{index}/{len(selected)}] {blind_id}: {output['status']} (mentions={len(output.get('mentions', []))}, ideas={len(output.get('ideas', []))})", flush=True)
@@ -310,20 +384,25 @@ def run(
         "artifact_type": "layered-transcript-outcome-extraction-run",
         "created_at": started,
         "extractor_version": EXTRACTOR_VERSION,
+        "idea_definition_version": IDEA_DEFINITION_VERSION,
         "prompt_version": _PROMPT_VERSION,
         "prompt_sha256": prompt_hash,
         "events_sha256": _sha256(event_bytes),
         "target_year": target_year,
         "selection_policy": "target-year records with zero compact lexical labels unless --include-weak-labeled or --event-id is specified",
-        "provider": PROVIDER,
+        "provider": provider,
         "model": model,
         "event_count": len(results),
-        "validated_event_count": sum(row.get("status") == "validated_candidate" for row in results),
+        "validated_event_count": sum(row.get("status") in {"validated_candidate", "no_supported_idea"} for row in results),
+        "no_supported_idea_count": sum(row.get("status") == "no_supported_idea" for row in results),
+        "insufficient_transcript_count": sum(row.get("status") == "insufficient_transcript" for row in results),
         "model_error_count": sum(row.get("status") == "model_error" for row in results),
         "mention_count": sum(len(row.get("mentions", [])) for row in results),
         "idea_count": sum(len(row.get("ideas", [])) for row in results),
         "link_count": sum(len(row.get("links", [])) for row in results),
         "quote_count": sum(row.get("validation", {}).get("evidence_quote_count", 0) for row in results),
+        "normalized_citation_count": sum(row.get("validation", {}).get("normalized_citation_count", 0) for row in results),
+        "rejected_citation_count": sum(row.get("validation", {}).get("rejected_citation_count", 0) for row in results),
         "forecastable_idea_count": sum(idea.get("forecastable") is True for row in results for idea in row.get("ideas", [])),
         "outputs_local_only": True,
         "limitations": [
@@ -349,6 +428,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=OUTPUT_DEFAULT)
     parser.add_argument("--target-year", default="2019")
     parser.add_argument("--timeout", type=int, default=240)
+    parser.add_argument("--provider", default=PROVIDER)
     parser.add_argument("--model", default=MODEL)
     parser.add_argument("--event-id", action="append", dest="event_ids")
     parser.add_argument("--include-weak-labeled", action="store_true")
@@ -356,7 +436,7 @@ def main() -> None:
     print(json.dumps(run(
         events_path=args.events, output_path=args.output, target_year=args.target_year,
         timeout=args.timeout, event_ids=set(args.event_ids) if args.event_ids else None,
-        include_weak_labeled=args.include_weak_labeled, model=args.model,
+        include_weak_labeled=args.include_weak_labeled, provider=args.provider, model=args.model,
     ), indent=2))
 
 
