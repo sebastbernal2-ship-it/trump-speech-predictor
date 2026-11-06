@@ -43,9 +43,9 @@ def validate_layered_outcome(
     record: dict[str, Any],
     turns_by_id: dict[str, str],
     *,
-    max_mentions: int = 200,
-    max_ideas: int = 60,
-    max_links: int = 400,
+    max_mentions: int = 500,
+    max_ideas: int = 200,
+    max_links: int = 1200,
 ) -> dict[str, Any]:
     """Validate a layered outcome row and its evidence against target-speaker turns.
 

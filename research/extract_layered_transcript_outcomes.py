@@ -26,12 +26,12 @@ from speechprefix.idea_layer.transcript_outcomes import validate_layered_outcome
 
 ROOT = Path(__file__).resolve().parents[1]
 EVENTS_DEFAULT = ROOT / "data/rollcall-by-type/trump-speech-candidates.jsonl"
-OUTPUT_DEFAULT = ROOT / "data/source-archives/2019-layered-transcript-outcomes-v2.3-zero-weak.jsonl"
+OUTPUT_DEFAULT = ROOT / "data/source-archives/2019-layered-transcript-outcomes-v2.4-zero-weak.jsonl"
 PROVIDER = "openai-codex"
 MODEL = "gpt-6-luna"
-EXTRACTOR_VERSION = "layered-transcript-outcomes-v2.3"
+EXTRACTOR_VERSION = "layered-transcript-outcomes-v2.4"
 IDEA_DEFINITION_VERSION = "independently-meaningful-idea-v1"
-_PROMPT_VERSION = "transcript-mentions-to-forecast-ideas-v5"
+_PROMPT_VERSION = "transcript-mentions-to-forecast-ideas-v6"
 _SYSTEM_PROMPT = (
     "You are a careful transcript-only research extractor. Return one JSON object and no markdown. "
     "Use only the supplied target-speaker transcript; do not use tools, news, event identity, or outside knowledge."
@@ -206,6 +206,7 @@ def _map_layered_result(
     blind_turns: list[dict[str, str]],
     blind_to_source: dict[str, str],
     metadata: dict[str, Any],
+    source_turns_by_id: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("response must be an object")
@@ -219,6 +220,7 @@ def _map_layered_result(
     available_blind = set(blind_turn_text)
     citation_repairs = []
     citation_rejections = []
+    enum_normalizations = []
     mentions = []
     for mention in value["mentions"]:
         if not isinstance(mention, dict) or not isinstance(mention.get("evidence"), list):
@@ -251,20 +253,48 @@ def _map_layered_result(
             evidence.append({"turn_id": blind_to_source[blind_id], "exact_quote": quote})
         if not evidence:
             raise ValueError(f"mention {mention.get('mention_id')} has no exact transcript citation")
-        mentions.append({**{key: item for key, item in mention.items() if key != "evidence"}, "evidence": evidence})
+        normalized_mention = {key: item for key, item in mention.items() if key != "evidence"}
+        if normalized_mention.get("role") not in {"core_expression", "supporting_detail", "illustrative_example", "event_specific_detail", "ceremonial_or_personal", "other"}:
+            enum_normalizations.append({"object_id": mention.get("mention_id"), "field": "role", "mapped_to": "other"})
+            normalized_mention["role"] = "other"
+        if normalized_mention.get("salience") not in {"central", "repeated", "secondary", "brief"}:
+            enum_normalizations.append({"object_id": mention.get("mention_id"), "field": "salience", "mapped_to": "secondary"})
+            normalized_mention["salience"] = "secondary"
+        mentions.append({**normalized_mention, "evidence": evidence})
+    normalized_ideas = []
+    for idea in value["ideas"]:
+        if not isinstance(idea, dict):
+            normalized_ideas.append(idea)
+            continue
+        normalized_idea = dict(idea)
+        fallbacks = {"kind": "other", "stance": "unclear", "prominence": "secondary"}
+        allowed_values = {
+            "kind": {"policy", "political", "factual_claim", "campaign_appeal", "ceremonial", "personal_anecdote", "other"},
+            "stance": {"support", "oppose", "describe", "unclear"},
+            "prominence": {"central", "repeated", "secondary", "brief"},
+        }
+        for field, fallback in fallbacks.items():
+            if normalized_idea.get(field) not in allowed_values[field]:
+                enum_normalizations.append({"object_id": idea.get("idea_id"), "field": field, "mapped_to": fallback})
+                normalized_idea[field] = fallback
+        normalized_ideas.append(normalized_idea)
     record = {
         "schema_version": 2,
         "artifact_type": "layered-transcript-outcome",
         **metadata,
         "mentions": mentions,
-        "ideas": value["ideas"],
+        "ideas": normalized_ideas,
         "links": value["links"],
         "coverage_note": coverage_note.strip(),
     }
-    turns_by_id = {blind_to_source[turn["turn_id"]]: turn["text"] for turn in blind_turns}
+    turns_by_id = source_turns_by_id or {
+        blind_to_source[turn["turn_id"]]: turn["text"] for turn in blind_turns
+    }
     validated = validate_layered_outcome(record, turns_by_id)
     validated["citation_repairs"] = citation_repairs
     validated["citation_rejections"] = citation_rejections
+    validated["enum_normalizations"] = enum_normalizations
+    validated["validation"]["enum_normalization_count"] = len(enum_normalizations)
     validated["validation"]["normalized_citation_count"] = len(citation_repairs)
     validated["validation"]["rejected_citation_count"] = len(citation_rejections)
     return validated
@@ -402,6 +432,7 @@ def run(
         "link_count": sum(len(row.get("links", [])) for row in results),
         "quote_count": sum(row.get("validation", {}).get("evidence_quote_count", 0) for row in results),
         "normalized_citation_count": sum(row.get("validation", {}).get("normalized_citation_count", 0) for row in results),
+        "enum_normalization_count": sum(row.get("validation", {}).get("enum_normalization_count", 0) for row in results),
         "rejected_citation_count": sum(row.get("validation", {}).get("rejected_citation_count", 0) for row in results),
         "forecastable_idea_count": sum(idea.get("forecastable") is True for row in results for idea in row.get("ideas", [])),
         "outputs_local_only": True,
