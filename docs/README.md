@@ -5,6 +5,8 @@ These documents describe the active retrospective context-to-ideas project. Repo
 - [`../README.md`](../README.md) — objective, leakage boundary, quick start, and repository map.
 - [`idea-layer/README.md`](idea-layer/README.md) — canonical task definition, current data/result, and limitations.
 - [`idea-layer/layered-transcript-outcomes.md`](idea-layer/layered-transcript-outcomes.md) — transcript evidence/mention layer, idea targets, typed links, and initial pilot limitations.
+- [`idea-layer/two-stage-relation-annotation-prototype.md`](idea-layer/two-stage-relation-annotation-prototype.md) — separate direct-expression anchors and fine-relation candidate-edge prototype.
+- [`idea-layer/relation-label-quality-bar-v1.md`](idea-layer/relation-label-quality-bar-v1.md) — frozen no-human-review diagnostic thresholds and results on a new 2020 sample.
 - [`idea-layer/layered-transcript-outcomes-v2-development.md`](idea-layer/layered-transcript-outcomes-v2-development.md) — v2 development run counts, retry provenance, and mechanical checks.
 - [`idea-layer/chunked-layered-outcomes-prototype.md`](idea-layer/chunked-layered-outcomes-prototype.md) — checkpointed long-transcript chunking/consolidation prototype and its single-event limitations.
 - [`idea-layer/idea-atom-definition-v1.md`](idea-layer/idea-atom-definition-v1.md) — operational idea unit, split/merge rules, and layer-specific evaluation implications.
