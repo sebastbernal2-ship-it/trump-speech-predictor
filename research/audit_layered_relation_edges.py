@@ -21,6 +21,7 @@ from speechprefix.idea_layer.relation_edges import (
     FINE_RELATIONS,
     canonical_sha256,
     validate_relation_candidate_record,
+    validate_relation_error_record,
 )
 from speechprefix.idea_layer.semantic_anchors import validate_expression_anchor_record
 from speechprefix.idea_layer.transcript_outcomes import validate_layered_outcome
@@ -29,8 +30,8 @@ ROOT = Path(__file__).resolve().parents[1]
 EVENTS_DEFAULT = ROOT / "data/rollcall-by-type/trump-speech-candidates.jsonl"
 AUDITOR_PROVIDER = "openai-codex"
 AUDITOR_MODEL = "gpt-6-astra"
-PROMPT_VERSION = "separate-anchor-and-fine-edge-review-v1"
-OUTPUT_DEFAULT = ROOT / "data/source-archives/2019-layered-relationship-audit-v2.jsonl"
+PROMPT_VERSION = "separate-anchor-and-fine-edge-review-v2"
+OUTPUT_DEFAULT = ROOT / "data/source-archives/2019-layered-relationship-audit-v3.jsonl"
 _SYSTEM_PROMPT = (
     "You are a skeptical transcript-only reviewer of semantic anchors and relation labels. "
     "Use only supplied transcript evidence and frozen nodes. Do not use tools, outside knowledge, event identity, news, or forecasts. "
@@ -111,7 +112,12 @@ def _prompt(
         "ideas": ideas,
         "expression_anchors": anchor_record["anchors"],
         "ideas_without_anchor": anchor_record["unanchored_idea_ids"],
-        "candidate_fine_edges": relation_record["edges"],
+        "candidate_fine_edges": relation_record.get("edges", []),
+        "fine_edge_input_status": (
+            "relation extraction failed; an empty candidate list is not evidence of no relations"
+            if relation_record.get("status") == "model_error"
+            else "validated candidate edges"
+        ),
     }
     return f"""Review the two distinct annotation layers. The transcript and quote-backed mentions are the only evidence.
 
@@ -298,12 +304,16 @@ def run(
         turns_by_id = {turn["turn_id"]: turn["text"] for turn in turns}
         validate_layered_outcome(outcome, turns_by_id)
         validate_expression_anchor_record(anchor_record, outcome, turns_by_id)
-        validate_relation_candidate_record(relation_record, outcome, anchor_record, turns_by_id)
+        relation_failed = relation_record.get("status") == "model_error"
+        if relation_failed:
+            validate_relation_error_record(relation_record, outcome, anchor_record, turns_by_id)
+        else:
+            validate_relation_candidate_record(relation_record, outcome, anchor_record, turns_by_id)
         blind, blind_to_source = _blind(turns, f"{index:04d}")
         source_to_blind = {source_id: blind_id for blind_id, source_id in blind_to_source.items()}
         prompt = _prompt(blind, outcome, anchor_record, relation_record, source_to_blind)
         expected_anchor_ids = {item["anchor_id"] for item in anchor_record["anchors"]}
-        expected_edge_ids = {item["edge_id"] for item in relation_record["edges"]}
+        expected_edge_ids = {item["edge_id"] for item in relation_record.get("edges", [])}
         existing_pairs = {(item["mention_id"], item["idea_id"]) for item in anchor_record["anchors"]}
         mention_ids = {item["mention_id"] for item in outcome["mentions"]}
         idea_ids = {item["idea_id"] for item in outcome["ideas"]}
@@ -340,6 +350,11 @@ def run(
             "source_outcome_sha256": relation_record["source_outcome_sha256"],
             "source_anchor_record_sha256": canonical_sha256(anchor_record),
             "source_relation_record_sha256": canonical_sha256(relation_record),
+            "relation_candidate_status": "model_error" if relation_failed else "validated_candidate",
+            "relation_attempt_count": relation_record["attempt_count"] if relation_failed else relation_record["extractor"].get("attempt_count", 1),
+            "relation_repair_errors": [] if relation_failed else relation_record["extractor"].get("repair_errors", []),
+            "fine_edge_review_status": "not_run_source_extraction_failed" if relation_failed else "reviewed_candidates",
+            "source_relation_errors": relation_record.get("errors", []) if relation_failed else [],
             "anchor_extractor_provider": anchor_record["extractor"]["provider"],
             "anchor_extractor_model": anchor_record["extractor"]["model"],
             "relation_extractor_provider": relation_record["extractor"]["provider"],
@@ -351,20 +366,23 @@ def run(
             "anchor_verdict_counts": anchor_counts,
             "anchor_reviews": anchor_reviews,
             "missing_anchor_candidates": missing_candidates,
-            "edge_count": len(relation_record["edges"]),
-            "edge_verdict_counts": edge_counts,
-            "edge_reviews": edge_reviews,
+            "edge_count": None if relation_failed else len(relation_record.get("edges", [])),
+            "edge_verdict_counts": None if relation_failed else edge_counts,
+            "edge_reviews": None if relation_failed else edge_reviews,
             "errors": errors,
             "auditor_response_sha256": response_hash,
         })
         print(f"[{index}/{len(relation_by_id)}] relationship-audit-case-{index:04d}: anchors={anchor_counts}, edges={edge_counts}, missing={len(missing_candidates)}", flush=True)
 
     all_anchor_reviews = [item for row in results for item in row["anchor_reviews"]]
-    all_edge_reviews = [item for row in results for item in row["edge_reviews"]]
+    all_edge_reviews = [item for row in results for item in (row["edge_reviews"] or [])]
     all_missing = [item for row in results for item in row["missing_anchor_candidates"]]
     anchor_totals = {verdict: sum(item["verdict"] == verdict for item in all_anchor_reviews) for verdict in sorted(_ANCHOR_VERDICTS)}
     edge_totals = {verdict: sum(item["verdict"] == verdict for item in all_edge_reviews) for verdict in sorted(_EDGE_VERDICTS)}
-    edge_relation = {edge["edge_id"]: edge["relation"] for record in relation_rows for edge in record["edges"]}
+    edge_relation = {
+        edge["edge_id"]: edge["relation"]
+        for record in relation_rows for edge in record.get("edges", [])
+    }
     edge_by_relation = {
         relation: {
             verdict: sum(item["verdict"] == verdict and edge_relation[item["edge_id"]] == relation for item in all_edge_reviews)
@@ -390,6 +408,9 @@ def run(
         "relation_extraction_model": relation_extractor["model"],
         "event_count": len(results),
         "successful_event_count": sum(row["audit_status"] == "audited" for row in results),
+        "relation_extraction_error_event_count": sum(row["relation_candidate_status"] == "model_error" for row in results),
+        "relation_repaired_event_count": sum(bool(row["relation_repair_errors"]) for row in results),
+        "fine_edge_review_event_count": sum(row["fine_edge_review_status"] == "reviewed_candidates" for row in results),
         "anchor_review_count": len(all_anchor_reviews),
         "anchor_verdict_counts": anchor_totals,
         "model_suggested_missing_anchor_count": len(all_missing),
