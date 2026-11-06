@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -13,9 +15,13 @@ from speechprefix.idea_layer.semantic_anchors import (
 from speechprefix.idea_layer.relation_edges import (
     FINE_RELATIONS,
     build_relation_candidate_record,
+    build_relation_error_record,
     candidate_edge_id,
+    canonical_sha256,
     direct_expression_anchors,
+    validate_proposed_relation_edges,
     validate_relation_candidate_record,
+    validate_relation_error_record,
 )
 
 
@@ -243,5 +249,184 @@ def test_relation_prompt_only_receives_frozen_anchors_not_legacy_fine_links():
     assert "legacy_relation_must_not_be_seen" not in prompt
     assert '"direct_expression_anchors"' in prompt
     assert '"forecastable"' not in prompt
+    assert '"allowed_mention_ids"' in prompt
+    assert '"allowed_anchored_idea_ids"' in prompt
+    assert '"anchor_pairs_not_to_repeat"' in prompt
     assert set(module._parse_edges('{"edges": [{"mention_id":"m","idea_id":"i","relation":"supports"}]}')[0]) == {"mention_id", "idea_id", "relation"}
     assert FINE_RELATIONS == {"supports", "illustrates", "elaborates", "qualifies", "contextualizes"}
+
+
+@pytest.mark.parametrize(("edge", "message"), [
+    ({"mention_id": "not-in-source", "idea_id": "lower_costs", "relation": "supports"}, "mention_id does not resolve"),
+    ({"mention_id": "policy_claim", "idea_id": "lower_costs", "relation": "supports"}, "duplicates an existing direct-expression anchor"),
+])
+def test_preoutput_relation_validator_rejects_unknown_mentions_and_anchor_duplicates(edge, message):
+    outcome, turns = _fixture()
+    anchors = _anchor_record(outcome, turns)
+    with pytest.raises(ValueError, match=message):
+        validate_proposed_relation_edges([edge], outcome, anchors)
+
+
+def _runner_input_files(tmp_path):
+    outcome, turns = _fixture()
+    event = {
+        "event_id": outcome["event_id"],
+        "event_date": "2020-01-01",
+        "target_speaker": "speaker",
+        "turns": [
+            {"turn_id": turn_id, "speaker_name": "speaker", "speaker_role": "target_speaker", "text": text}
+            for turn_id, text in turns.items()
+        ],
+    }
+    outcome["source_record_sha256"] = canonical_sha256(event)
+    transcript = "\n".join(f"{turn_id}\t{text}" for turn_id, text in turns.items())
+    outcome["target_transcript_sha256"] = hashlib.sha256(transcript.encode("utf-8")).hexdigest()
+    outcome["status"] = "validated_candidate"
+    anchors = _anchor_record(outcome, turns)
+    paths = {
+        "events": tmp_path / "events.jsonl",
+        "outcomes": tmp_path / "outcomes.jsonl",
+        "anchors": tmp_path / "anchors.jsonl",
+    }
+    for key, row in (("events", event), ("outcomes", outcome), ("anchors", anchors)):
+        paths[key].write_text(json.dumps(row) + "\n", encoding="utf-8")
+    return event, outcome, anchors, turns, paths
+
+
+def test_relation_runner_persists_exhausted_invalid_response_as_explicit_failure(tmp_path, monkeypatch):
+    script_path = Path(__file__).parents[1] / "research/extract_layered_relation_edges.py"
+    spec = importlib.util.spec_from_file_location("extract_layered_relation_edges_failure_test", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    _, _, anchors, _, paths = _runner_input_files(tmp_path)
+    calls = []
+    monkeypatch.setattr(
+        module,
+        "_call_pi",
+        lambda *args, **kwargs: calls.append(1) or json.dumps({
+            "edges": [{"mention_id": "not-in-source", "idea_id": "lower_costs", "relation": "supports"}]
+        }),
+    )
+    output = tmp_path / "relation-rows.jsonl"
+    result = module.run(
+        events_path=paths["events"],
+        outcomes_path=paths["outcomes"],
+        anchors_path=paths["anchors"],
+        output_path=output,
+        event_ids={"event_a"},
+        provider="test-provider",
+        model="test-model",
+    )
+    rows = [json.loads(line) for line in output.read_text().splitlines()]
+    manifest = json.loads(Path(str(output) + ".manifest.json").read_text())
+    assert len(calls) == 3
+    assert result["events"] == manifest["output_row_count"] == 1
+    assert result["successful_events"] == manifest["successful_event_count"] == 0
+    assert result["model_errors"] == manifest["model_error_count"] == 1
+    assert rows[0]["artifact_type"] == "layered-idea-relation-candidate-error"
+    assert rows[0]["status"] == "model_error"
+    assert rows[0]["attempt_count"] == 3
+    assert "mention_id does not resolve" in rows[0]["errors"][0]
+    assert "edges" not in rows[0]
+
+    audit_path = Path(__file__).parents[1] / "research/audit_layered_relation_edges.py"
+    audit_spec = importlib.util.spec_from_file_location("audit_relation_error_row_test", audit_path)
+    assert audit_spec is not None and audit_spec.loader is not None
+    audit_module = importlib.util.module_from_spec(audit_spec)
+    audit_spec.loader.exec_module(audit_module)
+    anchor_id = anchors["anchors"][0]["anchor_id"]
+    monkeypatch.setattr(
+        audit_module,
+        "_call_pi",
+        lambda *args, **kwargs: json.dumps({
+            "anchor_reviews": [{"anchor_id": anchor_id, "verdict": "direct", "note": "The mention states the idea."}],
+            "missing_anchor_candidates": [],
+            "edge_reviews": [],
+        }),
+    )
+    audit_output = tmp_path / "audit.jsonl"
+    audit_module.run(
+        events_path=paths["events"],
+        outcomes_path=paths["outcomes"],
+        relations_path=output,
+        anchors_path=paths["anchors"],
+        output_path=audit_output,
+        provider="audit-provider",
+        model="audit-model",
+    )
+    audit_row = json.loads(audit_output.read_text().splitlines()[0])
+    assert audit_row["relation_candidate_status"] == "model_error"
+    assert audit_row["fine_edge_review_status"] == "not_run_source_extraction_failed"
+    assert audit_row["edge_count"] is None
+    assert audit_row["edge_verdict_counts"] is None
+    assert audit_row["edge_reviews"] is None
+    assert audit_row["anchor_verdict_counts"]["direct"] == 1
+
+
+def test_relation_runner_records_repair_attempts_on_successful_candidate(tmp_path, monkeypatch):
+    script_path = Path(__file__).parents[1] / "research/extract_layered_relation_edges.py"
+    spec = importlib.util.spec_from_file_location("extract_layered_relation_edges_repair_test", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    _, _, _, _, paths = _runner_input_files(tmp_path)
+    responses = iter([
+        json.dumps({"edges": [{"mention_id": "not-in-source", "idea_id": "lower_costs", "relation": "supports"}]}),
+        json.dumps({"edges": [{"mention_id": "fee_example", "idea_id": "lower_costs", "relation": "illustrates"}]}),
+    ])
+    monkeypatch.setattr(module, "_call_pi", lambda *args, **kwargs: next(responses))
+    output = tmp_path / "relation-repaired.jsonl"
+    result = module.run(
+        events_path=paths["events"],
+        outcomes_path=paths["outcomes"],
+        anchors_path=paths["anchors"],
+        output_path=output,
+        event_ids={"event_a"},
+        provider="test-provider",
+        model="test-model",
+    )
+    row = json.loads(output.read_text().splitlines()[0])
+    manifest = json.loads(Path(str(output) + ".manifest.json").read_text())
+    assert result["successful_events"] == manifest["successful_event_count"] == 1
+    assert result["repaired_events"] == manifest["repaired_event_count"] == 1
+    assert result["repair_attempts"] == manifest["repair_attempt_count"] == 1
+    assert row["extractor"]["attempt_count"] == 2
+    assert "mention_id does not resolve" in row["extractor"]["repair_errors"][0]
+    assert row["edges"][0]["relation"] == "illustrates"
+
+
+def test_relation_error_record_is_bound_and_audit_prompt_does_not_call_it_zero_edges():
+    outcome, turns = _fixture()
+    anchors = _anchor_record(outcome, turns)
+    error = build_relation_error_record(
+        outcome,
+        anchors,
+        ["ValueError: invalid mention ID"],
+        attempt_count=1,
+        provider="test-provider",
+        model="test-model",
+        engine_version="edge-v1",
+        prompt_version="prompt-v1",
+        turns_by_id=turns,
+    )
+    assert error["status"] == "model_error"
+    assert validate_relation_error_record(error, outcome, anchors, turns) is error
+    audit_path = Path(__file__).parents[1] / "research/audit_layered_relation_edges.py"
+    spec = importlib.util.spec_from_file_location("audit_layered_relation_edges_error_test", audit_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    prompt = module._prompt(
+        [{"turn_id": "blind:t1", "text": turns["t1"]}, {"turn_id": "blind:t2", "text": turns["t2"]}],
+        outcome,
+        anchors,
+        error,
+        {"t1": "blind:t1", "t2": "blind:t2"},
+    )
+    assert "relation extraction failed" in prompt
+    assert '"candidate_fine_edges": []' in prompt
+    tampered = copy.deepcopy(error)
+    tampered["source_anchor_artifact_sha256"] = "c" * 64
+    with pytest.raises(ValueError, match="source anchor artifact hash"):
+        validate_relation_error_record(tampered, outcome, anchors, turns)
