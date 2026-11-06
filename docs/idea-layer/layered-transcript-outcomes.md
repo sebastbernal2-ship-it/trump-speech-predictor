@@ -35,7 +35,7 @@ The transcript-only extractor processed the 49 2019 records that had no matches 
 
 The extraction used Pi CLI with provider `openai-codex`. Full target-speaker transcripts were sent to that configured provider; data and generated artifacts remain Git-ignored/local under `data/source-archives/`. Both model aliases are mutable. The pilot is a selected 2019 development slice, not an untouched evaluation set. The existing 49-event flat atom pilot remains unchanged; no active classifier was trained or scored on either representation.
 
-A subsequent v2.3 extraction of the same 49-event development slice, its immutable cross-model retry chain, and the all-rows mechanical validation summary are documented in [`layered-transcript-outcomes-v2-development.md`](layered-transcript-outcomes-v2-development.md). This is a separate artifact and does not supersede or modify the earlier pilot.
+A subsequent v2.3 extraction of the same 49-event development slice, its immutable cross-model retry chain, and the all-rows mechanical validation summary are documented in [`layered-transcript-outcomes-v2-development.md`](layered-transcript-outcomes-v2-development.md). A separate chunked extractor prototype mechanically validated one long 2019 event; its design and limits are in [`chunked-layered-outcomes-prototype.md`](chunked-layered-outcomes-prototype.md). Both are separate development artifacts and do not supersede or modify the earlier pilot.
 
 ## Evaluation should be multi-objective
 
