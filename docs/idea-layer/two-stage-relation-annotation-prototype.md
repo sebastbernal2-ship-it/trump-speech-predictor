@@ -69,9 +69,11 @@ The output manifests record source hashes, model/prompt versions, and per-event 
 
 The separation is technically useful: a direct-expression anchor is now a distinct, hash-bound artifact, while fine relations are optional and cannot mutate it. But this pilot does **not** establish that the labels are “good enough.” The 18 model-suggested anchor omissions and the second inventory's additional 27 links show that anchor completeness is not settled; the relation review still has substantial uncertainty. No result here certifies semantic correctness, edge recall, cross-market graph utility, or forecastability.
 
+A subsequent, frozen 12-event 2020 test applied explicit anchor-agreement and relation-review thresholds. It failed the per-event anchor agreement screen; two relation extractions failed structural validation; fine-edge review also fell below the specified thresholds. Cross-provider review was blocked by provider balance/configuration. See [`relation-label-quality-bar-v1.md`](relation-label-quality-bar-v1.md) for the predeclared bar, per-event sample, hashes, and full result. The current status remains **candidate-only**.
+
 Before using these edges as graph features:
 
-1. Treat anchor disagreements and omission suggestions as a frozen diagnostic set. Run another bounded, blinded anchor audit on a different development slice; do not automatically accept the judge's suggestions or tune to its ratings.
-2. Refine operational contrast examples for `supports` vs. `elaborates`, `illustrates`, and `contextualizes`, while preserving `expresses` as the separate anchor relation. Keep abstention available.
-3. Repeat the separate passes on additional events and long transcripts, retaining per-event errors and source/model provenance. Do not turn model agreement into a semantic-accuracy claim.
-4. Keep candidate relation edges out of the forecasting model until a defensible label-quality/evaluation rule is established. The active seven-day baseline remains unchanged.
+1. Diagnose the frozen sample's anchor disagreements and relation-output validation failures without retrying/tuning on those events. Any prompt change must be a new version tested on a new frozen sample.
+2. Refine operational contrast examples for `supports` vs. `elaborates`, `illustrates`, and `contextualizes` using generic boundary cases, then freeze the definitions before another evaluation. Keep abstention available.
+3. Obtain a configured, funded second provider for the required independent model diagnostic; provider diversity still does not create semantic gold.
+4. Keep candidate relation edges out of the forecasting model. The active seven-day baseline remains unchanged.
