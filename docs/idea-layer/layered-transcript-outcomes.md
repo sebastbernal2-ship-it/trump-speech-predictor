@@ -29,7 +29,7 @@ For example, a transcript's named project or statistic can be retained as a `sup
 
 The contract is structural and provenance-focused. A perfect schema check or exact quote match does not establish that a paraphrase is correct, that a link is semantically appropriate, or that an important idea/detail was not omitted.
 
-A separate prototype now freezes direct-expression anchors in their own source-bound artifact before a second engine proposes optional fine-grained relations. It leaves the v2.3 joint extractor and its artifacts unchanged. The three-event pilot found anchor-set disagreement and model-judged edge uncertainty; it is not a semantic quality gate. See [`two-stage-relation-annotation-prototype.md`](two-stage-relation-annotation-prototype.md) for schemas, per-event diagnostics, model provenance, and limitations.
+A separate prototype now freezes direct-expression anchors in their own source-bound artifact before a second engine proposes optional fine-grained relations. It leaves the v2.3 joint extractor and its artifacts unchanged. The three-event pilot and subsequent 12-event 2020 quality-bar test found anchor disagreement, relation-model validation failures, and model-judged edge uncertainty; neither is a semantic quality gate. See [`two-stage-relation-annotation-prototype.md`](two-stage-relation-annotation-prototype.md) for schemas and the initial pilot, and [`relation-label-quality-bar-v1.md`](relation-label-quality-bar-v1.md) for frozen criteria and the newer failed/blocked test.
 
 ## Pilot
 
