@@ -51,6 +51,10 @@ Artifacts are local and Git-ignored:
 - Superseded recent-headline report with date-tie ordering bug: `data/rollcall-context-to-idea-evaluation-v5.json` — SHA-256 `fccae70aa7610f1b4dd7f4f0f3dafeee93b0ca10ad410cfb5ae2efcc1408acf0`
 - Current stable-order model and selection audit: `data/rollcall-context-to-idea-evaluation-v7.json` — SHA-256 `5589eb462e6db386a972393822192b36f449ed88b5668d930442821391b5fd87`
 
+## Transcript outcome representation: mentions → ideas
+
+A flat atom list can conflate transcript coverage with the abstract concepts used as prediction targets. The separate research contract now models exact-quote-backed transcript mentions, higher-level idea nodes, and typed links between them. This preserves meaningful specifics without automatically promoting every detail to a forecast label. See [`layered-transcript-outcomes.md`](layered-transcript-outcomes.md) for the contract, the local 2019 pilot, and separate evaluation dimensions. The pilot has not changed the active phrase labels, baseline model, or chronological metrics; its transcript-derived nodes remain outcomes only and cannot be same-event input features. The prior flat-label coverage repair and cross-model audit remain documented in [`transcript-idea-atom-quality-audit.md`](transcript-idea-atom-quality-audit.md).
+
 ## Story-level context and graph research
 
 The next input-representation experiment is to preserve individual articles while modeling exact duplicates, syndication, updates, related coverage, and time-bounded entity-profile claims as a heterogeneous graph. Its design and strict as-of boundary are in [`story-graph-architecture.md`](story-graph-architecture.md). The graph contract currently validates provenance, temporal fields, hashes, and cutoff projection; story clustering, learned weighting, entity-profile ingestion, and Q-GNN remain unimplemented. Do not change the active seven-day model until a separately versioned chronological comparison is complete.
