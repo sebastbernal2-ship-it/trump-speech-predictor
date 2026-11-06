@@ -13,6 +13,10 @@ from speechprefix.idea_layer.semantic_anchors import (
     validate_expression_anchor_record,
 )
 from speechprefix.idea_layer.relation_edges import (
+    FINE_RELATION_BOUNDARY_EXAMPLES,
+    FINE_RELATION_DECISION_RULES,
+    FINE_RELATION_DEFINITIONS,
+    FINE_RELATION_TAXONOMY_VERSION,
     FINE_RELATIONS,
     build_relation_candidate_record,
     build_relation_error_record,
@@ -110,6 +114,7 @@ def test_relation_artifact_binds_separate_anchors_and_keeps_fine_edges_separate(
         turns_by_id=turns,
     )
     assert record["direct_expression_anchors"] == direct_expression_anchors(anchors)
+    assert record["extractor"]["taxonomy_version"] == FINE_RELATION_TAXONOMY_VERSION
     assert record["edges"] == [{
         "edge_id": candidate_edge_id("fee_example", "lower_costs", "illustrates"),
         "mention_id": "fee_example", "idea_id": "lower_costs", "relation": "illustrates",
@@ -252,8 +257,37 @@ def test_relation_prompt_only_receives_frozen_anchors_not_legacy_fine_links():
     assert '"allowed_mention_ids"' in prompt
     assert '"allowed_anchored_idea_ids"' in prompt
     assert '"anchor_pairs_not_to_repeat"' in prompt
+    assert FINE_RELATION_TAXONOMY_VERSION in prompt
+    assert "A nurse leaving the hospital at 10:30" in prompt
     assert set(module._parse_edges('{"edges": [{"mention_id":"m","idea_id":"i","relation":"supports"}]}')[0]) == {"mention_id", "idea_id", "relation"}
     assert FINE_RELATIONS == {"supports", "illustrates", "elaborates", "qualifies", "contextualizes"}
+
+
+def test_fine_relation_taxonomy_has_one_generic_boundary_example_per_type():
+    assert set(FINE_RELATION_DEFINITIONS) == FINE_RELATIONS
+    assert {example["relation"] for example in FINE_RELATION_BOUNDARY_EXAMPLES} == FINE_RELATIONS
+    assert any("If multiple labels remain plausible" in rule for rule in FINE_RELATION_DECISION_RULES)
+    assert all(example["idea"] == "Extend evening bus service." for example in FINE_RELATION_BOUNDARY_EXAMPLES)
+
+
+def test_relation_auditor_uses_the_same_versioned_taxonomy():
+    audit_path = Path(__file__).parents[1] / "research/audit_layered_relation_edges.py"
+    spec = importlib.util.spec_from_file_location("audit_layered_relation_edges_taxonomy_test", audit_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    outcome, turns = _fixture()
+    anchors = _anchor_record(outcome, turns)
+    prompt = module._prompt(
+        [{"turn_id": "blind:t1", "text": turns["t1"]}, {"turn_id": "blind:t2", "text": turns["t2"]}],
+        outcome,
+        anchors,
+        {"edges": []},
+        {"t1": "blind:t1", "t2": "blind:t2"},
+    )
+    assert FINE_RELATION_TAXONOMY_VERSION in prompt
+    assert "The last bus leaves at 9:45" in prompt
+    assert "A nurse leaving the hospital at 10:30" in prompt
 
 
 @pytest.mark.parametrize(("edge", "message"), [

@@ -70,3 +70,7 @@ Pairwise Jaccard is calculated over exact `(mention_id, idea_id)` sets per event
 ## Provider limitation
 
 At freeze time, `openai-codex` authentication was ready. A minimal DeepSeek request returned HTTP 402 `Insufficient Balance`; Anthropic was not configured. Therefore the required cross-provider relation review is unavailable. The `gpt-6-astra` review above is same-provider and diagnostic only; it cannot pass Gate 3. The overall result remains **blocked/failed**, regardless of same-provider ratings.
+
+## Taxonomy revision for future testing
+
+After recording the failed v1 result, fine-relation definitions were revised into a frozen, versioned contrast set: [`fine-relation-taxonomy-v2.md`](fine-relation-taxonomy-v2.md). The extractor and reviewer prompts now carry the same taxonomy version and synthetic boundary examples. No model calls or re-labeling were performed on the failed 2020 sample with v2; the next score must come from a different sample frozen before extraction. This revision does not change the v1 thresholds or reverse its failed/blocked result.

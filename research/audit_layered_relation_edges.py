@@ -17,7 +17,10 @@ from pathlib import Path
 from typing import Any
 
 from speechprefix.idea_layer.relation_edges import (
+    FINE_RELATION_BOUNDARY_EXAMPLES,
+    FINE_RELATION_DECISION_RULES,
     FINE_RELATION_DEFINITIONS,
+    FINE_RELATION_TAXONOMY_VERSION,
     FINE_RELATIONS,
     canonical_sha256,
     validate_relation_candidate_record,
@@ -30,8 +33,8 @@ ROOT = Path(__file__).resolve().parents[1]
 EVENTS_DEFAULT = ROOT / "data/rollcall-by-type/trump-speech-candidates.jsonl"
 AUDITOR_PROVIDER = "openai-codex"
 AUDITOR_MODEL = "gpt-6-astra"
-PROMPT_VERSION = "separate-anchor-and-fine-edge-review-v2"
-OUTPUT_DEFAULT = ROOT / "data/source-archives/2019-layered-relationship-audit-v3.jsonl"
+PROMPT_VERSION = "separate-anchor-and-fine-edge-review-v4"
+OUTPUT_DEFAULT = ROOT / "data/source-archives/2019-layered-relationship-audit-v5.jsonl"
 _SYSTEM_PROMPT = (
     "You are a skeptical transcript-only reviewer of semantic anchors and relation labels. "
     "Use only supplied transcript evidence and frozen nodes. Do not use tools, outside knowledge, event identity, news, or forecasts. "
@@ -125,10 +128,15 @@ A. **Expression anchors.** For each supplied anchor, decide whether the mention 
 
 Also scan for up to 20 obvious direct-expression anchor pairs missing from the supplied anchor set. Return only mention/idea IDs that exist in the input, and do not duplicate an existing pair. These are candidate omissions, not proof of incomplete recall.
 
-B. **Fine-grained relation edges.** For each supplied candidate edge, judge whether its typed relation is a plausible reading of the mention→idea connection (`plausible`), ambiguous among relation types (`uncertain`), or a mismatch (`mismatch`). A plausible verdict is not objective truth. Return one review for every edge ID.
+B. **Fine-grained relation edges.** For each supplied candidate edge, judge whether its typed relation is a plausible reading of the mention→idea connection (`plausible`), ambiguous among relation types (`uncertain`), or a mismatch (`mismatch`). A plausible verdict is not objective truth. Return one review for every edge ID. If the input says relation extraction failed, do not infer that no relations exist and return an empty `edge_reviews` list; edge review was not performed.
 
-Relation definitions:
+Relation taxonomy version: {FINE_RELATION_TAXONOMY_VERSION}
+Definitions:
 {json.dumps(FINE_RELATION_DEFINITIONS, ensure_ascii=False, indent=2)}
+Decision rules:
+{json.dumps(FINE_RELATION_DECISION_RULES, ensure_ascii=False, indent=2)}
+Generic boundary examples:
+{json.dumps(FINE_RELATION_BOUNDARY_EXAMPLES, ensure_ascii=False, indent=2)}
 
 Do not change nodes, anchors, or edges. Do not score forecastability, use outside context, or claim completeness. Notes should be brief. Missing-anchor suggestions inherit evidence from the cited mention ID; do not invent quotes.
 
@@ -359,6 +367,7 @@ def run(
             "anchor_extractor_model": anchor_record["extractor"]["model"],
             "relation_extractor_provider": relation_record["extractor"]["provider"],
             "relation_extractor_model": relation_record["extractor"]["model"],
+            "relation_taxonomy_version": relation_record["extractor"].get("taxonomy_version"),
             "auditor_provider": provider,
             "auditor_model": model,
             "audit_prompt_version": PROMPT_VERSION,
@@ -406,6 +415,8 @@ def run(
         "anchor_extraction_model": anchor_extractor["model"],
         "relation_extraction_provider": relation_extractor["provider"],
         "relation_extraction_model": relation_extractor["model"],
+        "relation_taxonomy_version": relation_extractor.get("taxonomy_version"),
+        "audit_relation_taxonomy_version": FINE_RELATION_TAXONOMY_VERSION,
         "event_count": len(results),
         "successful_event_count": sum(row["audit_status"] == "audited" for row in results),
         "relation_extraction_error_event_count": sum(row["relation_candidate_status"] == "model_error" for row in results),
