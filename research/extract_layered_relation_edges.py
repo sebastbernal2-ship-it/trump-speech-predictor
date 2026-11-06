@@ -1,8 +1,8 @@
 """Generate optional fine-grained edges over frozen layered transcript outcomes.
 
-The source outcome's `expresses` links are copied as immutable anchors. This
-second model pass sees those anchors but cannot create or modify them; it emits
-only optional non-`expresses` mention-to-idea relation candidates.
+A separate, source-bound anchor artifact is immutable input. The model pass emits
+only optional non-`expresses` relations; invalid edges are rejected before
+serialization, and exhausted event attempts are written as explicit errors.
 """
 
 from __future__ import annotations
@@ -20,7 +20,9 @@ from typing import Any
 from speechprefix.idea_layer.relation_edges import (
     FINE_RELATION_DEFINITIONS,
     build_relation_candidate_record,
+    build_relation_error_record,
     direct_expression_anchors,
+    validate_proposed_relation_edges,
     validate_relation_candidate_record,
 )
 from speechprefix.idea_layer.semantic_anchors import validate_expression_anchor_record
@@ -28,8 +30,8 @@ from speechprefix.idea_layer.transcript_outcomes import validate_layered_outcome
 
 ROOT = Path(__file__).resolve().parents[1]
 EVENTS_DEFAULT = ROOT / "data/rollcall-by-type/trump-speech-candidates.jsonl"
-ENGINE_VERSION = "layered-fine-relation-edge-pass-v1"
-PROMPT_VERSION = "frozen-expresses-anchors-fine-relations-v1"
+ENGINE_VERSION = "layered-fine-relation-edge-pass-v2"
+PROMPT_VERSION = "frozen-expresses-anchors-fine-relations-v2"
 PROVIDER = "openai-codex"
 MODEL = "gpt-6-luna"
 OUTPUT_DEFAULT = ROOT / "data/source-archives/layered-fine-relation-edge-candidates-v2.jsonl"
@@ -100,7 +102,12 @@ def _prompt(
             {key: value for key, value in idea.items() if key != "forecastable"}
             for idea in outcome["ideas"] if idea["idea_id"] in anchored_idea_ids
         ],
+        "allowed_mention_ids": sorted(mention["mention_id"] for mention in outcome["mentions"]),
+        "allowed_anchored_idea_ids": sorted(anchored_idea_ids),
         "direct_expression_anchors": blind_anchors,
+        "anchor_pairs_not_to_repeat": sorted(
+            [anchor["mention_id"], anchor["idea_id"]] for anchor in blind_anchors
+        ),
         "unanchored_idea_ids": anchor_record["unanchored_idea_ids"],
     }
     return f"""Annotate optional fine-grained relations over an already frozen mention/idea inventory.
@@ -115,7 +122,8 @@ Guidance:
 - Prefer no edge over an ambiguous edge. An omitted edge means "not proposed here", not "unrelated".
 - For one mention/idea pair, choose at most one best relation; do not emit a second label for the same pair.
 - A direct-expression anchor pair is already represented and must not be repeated.
-- Do not create or modify mentions, ideas, evidence, nodes, or IDs. Select only supplied mention/idea IDs.
+- Do not create or modify mentions, ideas, evidence, nodes, or IDs. `mention_id` must be in `allowed_mention_ids`; `idea_id` must be in `allowed_anchored_idea_ids`.
+- Never return a pair listed in `anchor_pairs_not_to_repeat`; an anchor duplicate invalidates the response.
 - Relation proposals are not semantic gold and have no confidence score.
 
 Return exactly {{"edges": [{{"mention_id": "supplied ID", "idea_id": "supplied ID", "relation": "supports|illustrates|elaborates|qualifies|contextualizes"}}]}}. Return an empty list if no additional relation is sufficiently clear. Maximum 1,200 edges.
@@ -244,12 +252,14 @@ def run(
         prompt = _prompt(blind_turns, blinded_outcome, anchor_record, blind_anchors)
         relation_record = None
         attempt_errors = []
+        last_response_hash = None
         for attempt in range(3):
             response = ""
             try:
                 response = _call_pi(prompt, provider=provider, model=model, timeout=timeout)
-                response_hash = _sha256(response.encode("utf-8"))
+                last_response_hash = _sha256(response.encode("utf-8"))
                 proposed_edges = _parse_edges(response)
+                validate_proposed_relation_edges(proposed_edges, blinded_outcome, anchor_record)
                 relation_record = build_relation_candidate_record(
                     outcome,
                     anchor_record,
@@ -259,8 +269,10 @@ def run(
                     engine_version=ENGINE_VERSION,
                     prompt_version=PROMPT_VERSION,
                     turns_by_id=turns_by_id,
+                    attempt_count=attempt + 1,
+                    repair_errors=attempt_errors,
                 )
-                relation_record["extractor"]["response_sha256"] = response_hash
+                relation_record["extractor"]["response_sha256"] = last_response_hash
                 validate_relation_candidate_record(relation_record, outcome, anchor_record, turns_by_id)
                 break
             except (ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
@@ -270,17 +282,34 @@ def run(
                 relation_record = None
                 if attempt < 2:
                     prompt += (
-                        "\n\nFORMAT REPAIR: Return exactly one JSON object with an edges list. Use only supplied IDs, "
-                        "one non-expresses relation per non-anchor pair, or omit the pair. No outside sources.\nPREVIOUS RESPONSE:\n" + response
+                        f"\n\nVALIDATION REPAIR: The previous response was rejected: {exc}. "
+                        "Return a fresh edges list using only the allowlisted IDs. Remove every repeated anchor pair, "
+                        "unknown mention/idea ID, and duplicate endpoint pair; if uncertain, omit the edge.\nPREVIOUS RESPONSE:\n" + response
                     )
         if relation_record is None:
+            error_record = build_relation_error_record(
+                outcome,
+                anchor_record,
+                attempt_errors,
+                attempt_count=len(attempt_errors),
+                provider=provider,
+                model=model,
+                engine_version=ENGINE_VERSION,
+                prompt_version=PROMPT_VERSION,
+                turns_by_id=turns_by_id,
+                response_sha256=last_response_hash,
+            )
+            rows.append(error_record)
             errors.append({"event_id": event_id, "errors": attempt_errors})
-            print(f"[{index}/{len(event_ids)}] relation-case-{index:04d}: model_error", flush=True)
+            print(f"[{index}/{len(event_ids)}] relation-case-{index:04d}: model_error (recorded)", flush=True)
             continue
         rows.append(relation_record)
         print(f"[{index}/{len(event_ids)}] relation-case-{index:04d}: edges={len(relation_record['edges'])}", flush=True)
 
     output_bytes = "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows).encode("utf-8")
+    successful_rows = [row for row in rows if row.get("status") != "model_error"]
+    repaired_rows = [row for row in successful_rows if row["extractor"]["attempt_count"] > 1]
+    repair_attempt_count = sum(len(row["extractor"]["repair_errors"]) for row in successful_rows)
     manifest = {
         "schema_version": 1,
         "artifact_type": "layered-fine-relation-edge-extraction-run",
@@ -293,11 +322,14 @@ def run(
         "provider": provider,
         "model": model,
         "requested_event_ids": sorted(event_ids),
-        "successful_event_count": len(rows),
+        "output_row_count": len(rows),
+        "successful_event_count": len(successful_rows),
         "model_error_count": len(errors),
-        "candidate_edge_count": sum(len(row["edges"]) for row in rows),
+        "repaired_event_count": len(repaired_rows),
+        "repair_attempt_count": repair_attempt_count,
+        "candidate_edge_count": sum(len(row.get("edges", [])) for row in successful_rows),
         "relation_counts": {
-            relation: sum(edge["relation"] == relation for row in rows for edge in row["edges"])
+            relation: sum(edge["relation"] == relation for row in successful_rows for edge in row.get("edges", []))
             for relation in sorted(FINE_RELATION_DEFINITIONS)
         },
         "errors": errors,
@@ -315,8 +347,11 @@ def run(
         "output": str(output_path),
         "manifest": str(manifest_path),
         "events": len(rows),
+        "successful_events": len(successful_rows),
         "model_errors": len(errors),
-        "candidate_edges": sum(len(row["edges"]) for row in rows),
+        "repaired_events": len(repaired_rows),
+        "repair_attempts": repair_attempt_count,
+        "candidate_edges": sum(len(row.get("edges", [])) for row in successful_rows),
     }
 
 
