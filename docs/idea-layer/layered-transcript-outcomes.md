@@ -21,7 +21,8 @@ For example, a transcript's named project or statistic can be retained as a `sup
 ## Contract and code
 
 - Contract/validation: `speechprefix/idea_layer/transcript_outcomes.py`
-- `validate_layered_outcome(...)` checks schema, unique IDs, allowed relation/role values, resolved links, non-orphan mentions/ideas, and exact quote substrings against target-speaker turns. It explicitly marks entailment and completeness as unvalidated.
+- `validate_layered_outcome(...)` checks schema, unique IDs, allowed relation/role values, resolved links, non-orphan mentions/ideas, and exact quote substrings against target-speaker turns. Schema v2 additionally requires every idea to have at least one `expresses` link; this relation is distinct from the mention's transcript-local role. It explicitly marks entailment and completeness as unvalidated.
+- Extractor v2.3 repairs a quote only when its normalized word-token sequence has one unique exact match in the cited turn, then stores the actual transcript substring and records the repair. It drops a nonmatching extra citation only when that mention retains another exact citation; a mention with no valid citation still fails. This is provenance hygiene, not semantic verification.
 - `idea_targets(...)` projects the abstract idea layer for training/evaluation; `forecastable_only=True` is an optional separate view.
 - `mentions_for_idea(...)` follows idea links back to the specific supporting transcript units.
 - Extractor: `research/extract_layered_transcript_outcomes.py`; failed event rows can be retried and merged immutably with `research/merge_layered_transcript_outcome_retries.py`.
@@ -33,6 +34,8 @@ The contract is structural and provenance-focused. A perfect schema check or exa
 The transcript-only extractor processed the 49 2019 records that had no matches from `compact-issue-phrases-v2`. The immutable merged pilot contains 655 mentions, 377 linked idea nodes, 707 links, and 1,090 exact quote citations across all 49 events. Of the 377 idea nodes, 188 connect to multiple mentions (2–10 each); the remaining 189 have one linked mention. The extractor marked 214 ideas forecastable. Four initial responses failed structural/quote validation; three were replaced by exact-quote-valid retries from `gpt-6-luna`, and one stubborn quote case was re-extracted with `gpt-6-astra`. All rows in the final artifact pass structural and exact-substring checks. This demonstrates a workable multi-resolution representation, not that the mention lists are complete, that quotes entail every paraphrase, or that forecastability is correct.
 
 The extraction used Pi CLI with provider `openai-codex`. Full target-speaker transcripts were sent to that configured provider; data and generated artifacts remain Git-ignored/local under `data/source-archives/`. Both model aliases are mutable. The pilot is a selected 2019 development slice, not an untouched evaluation set. The existing 49-event flat atom pilot remains unchanged; no active classifier was trained or scored on either representation.
+
+A subsequent v2.3 extraction of the same 49-event development slice, its immutable cross-model retry chain, and the all-rows mechanical validation summary are documented in [`layered-transcript-outcomes-v2-development.md`](layered-transcript-outcomes-v2-development.md). This is a separate artifact and does not supersede or modify the earlier pilot.
 
 ## Evaluation should be multi-objective
 
@@ -56,3 +59,4 @@ The target-event transcript and derived outcome layers remain labels only. They 
 - Contract SHA-256: `e7494a218094574a42ef0de2f6445b2ae3815575f36348be05f5031e993c2965`
 - Extraction runner SHA-256: `c4bb3d5edd071a99f9d45ce070927a7d363c4c7486963318cb69736bbd106e08`
 - Retry merge runner SHA-256: `fdfaf8faee363c445f4099e391a72a242c10ee0abf1c875ae7beb303f101c57b`
+- v2.3 development artifact and manifest hashes are recorded in [`layered-transcript-outcomes-v2-development.md`](layered-transcript-outcomes-v2-development.md); both files are Git-ignored/local.
