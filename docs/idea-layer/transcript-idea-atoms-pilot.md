@@ -1,6 +1,6 @@
 # Transcript-only semantic idea-atom extraction pilot
 
-**Status:** AI-authored, transcript-only development diagnostic. These outputs are interpretive candidate labels, not semantic gold, and they have not been independently validated. This pilot addresses the 2019 records that the compact lexical extractor left empty; it does not change that extractor or the forecasting model.
+**Status:** AI-authored, transcript-only development diagnostic. These outputs are interpretive candidate labels, not semantic gold; no human review or objective ground-truth validation is available. This pilot addresses the 2019 records that the compact lexical extractor left empty; it does not change that extractor or the forecasting model.
 
 ## Why this pilot
 
@@ -32,7 +32,7 @@ The output distinguishes, for example, a ceremonial award mention (marked nonfor
 
 ## Interpretation and limitations
 
-This demonstrates broader **candidate coverage**, not improved forecast accuracy or proven label correctness. A quote can be present verbatim while the model's abstraction, stance, prominence, or forecastability judgment is still wrong. The LLM may over-split, merge unrelated propositions, omit concepts, or overstate confidence. No human review was used, and no independent semantic gold exists.
+This demonstrates broader **candidate coverage**, not improved forecast accuracy or proven label correctness. A quote can be present verbatim while the model's abstraction, stance, prominence, or forecastability judgment is still wrong. The LLM may over-split, merge unrelated propositions, omit concepts, or overstate confidence. No human review was used, and no independent semantic gold exists. A separate cross-model AI audit of all 269 candidates is documented in [`transcript-idea-atom-quality-audit.md`](transcript-idea-atom-quality-audit.md); its composite score is explicitly diagnostic and does not establish semantic accuracy.
 
 This is a selected slice of 49 events whose weak labels were empty. The other 142 labeled 2019 events and earlier training events have not yet been processed by this extractor, so the 269 atoms cannot be mixed into the old evaluation or compared as if they were a uniform target set. No prediction model was trained or scored against these atoms. Before using them in forecasting, the same extraction protocol would need to be applied to the chronological training and evaluation events, with duplicate concepts aligned across events and per-event disagreements examined. The current `idea_id` values are event-local open-vocabulary labels, not a stable cross-event ontology.
 
