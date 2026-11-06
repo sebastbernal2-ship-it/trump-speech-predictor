@@ -29,6 +29,8 @@ For example, a transcript's named project or statistic can be retained as a `sup
 
 The contract is structural and provenance-focused. A perfect schema check or exact quote match does not establish that a paraphrase is correct, that a link is semantically appropriate, or that an important idea/detail was not omitted.
 
+A separate prototype now freezes direct-expression anchors in their own source-bound artifact before a second engine proposes optional fine-grained relations. It leaves the v2.3 joint extractor and its artifacts unchanged. The three-event pilot found anchor-set disagreement and model-judged edge uncertainty; it is not a semantic quality gate. See [`two-stage-relation-annotation-prototype.md`](two-stage-relation-annotation-prototype.md) for schemas, per-event diagnostics, model provenance, and limitations.
+
 ## Pilot
 
 The transcript-only extractor processed the 49 2019 records that had no matches from `compact-issue-phrases-v2`. The immutable merged pilot contains 655 mentions, 377 linked idea nodes, 707 links, and 1,090 exact quote citations across all 49 events. Of the 377 idea nodes, 188 connect to multiple mentions (2–10 each); the remaining 189 have one linked mention. The extractor marked 214 ideas forecastable. Four initial responses failed structural/quote validation; three were replaced by exact-quote-valid retries from `gpt-6-luna`, and one stubborn quote case was re-extracted with `gpt-6-astra`. All rows in the final artifact pass structural and exact-substring checks. This demonstrates a workable multi-resolution representation, not that the mention lists are complete, that quotes entail every paraphrase, or that forecastability is correct.
