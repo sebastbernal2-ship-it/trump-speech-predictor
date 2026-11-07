@@ -11,7 +11,7 @@ The frozen benchmark's input is that event's preceding-week context; experimenta
 - Current historical input: 38 unique retrospective snapshots; 32 produce extractable target labels. The stable-order recent-headline variant modestly improves nDCG@10 (0.475 vs 0.439) and recall@10 (0.371 vs 0.315) versus the no-context reference, ties P@4, and loses on binary loss (0.708 vs 0.562) on only four development events. It is runnable, but **not a demonstrated successful forecaster**.
 - News snapshots were retrieved after their target speeches. Their feed dates are historical evidence for a retrospective experiment, not proof of point-in-time availability. The speech idea labels are also incomplete lexical proxies, not semantic ground truth.
 
-Full task definition and current experiment: [`docs/idea-layer/README.md`](docs/idea-layer/README.md). Story-level graph design and Q-GNN-compatible data contract: [`docs/idea-layer/story-graph-architecture.md`](docs/idea-layer/story-graph-architecture.md). Data caveats: [`docs/data-audit.md`](docs/data-audit.md). AI-only transcript review policy: [`docs/idea-layer/ai-review-policy.md`](docs/idea-layer/ai-review-policy.md).
+Full task definition and current experiment: [`docs/idea-layer/README.md`](docs/idea-layer/README.md). Story-level graph design and Q-GNN-compatible data contract: [`docs/idea-layer/stories/story-graph-architecture.md`](docs/idea-layer/stories/story-graph-architecture.md). Data caveats: [`docs/data-audit.md`](docs/data-audit.md). AI-only transcript review policy: [`docs/idea-layer/governance/ai-review-policy.md`](docs/idea-layer/governance/ai-review-policy.md).
 
 ## Run the historical experiment
 

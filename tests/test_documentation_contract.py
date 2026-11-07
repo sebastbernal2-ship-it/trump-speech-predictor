@@ -48,6 +48,23 @@ def test_canonical_task_and_package_description_stay_aligned() -> None:
     assert "continuation" not in description
 
 
+def test_speech_content_research_layers_have_separate_paths() -> None:
+    research_layers = ROOT / "research/idea_layers"
+    docs_layers = ROOT / "docs/idea-layer"
+    for layer in ("outcomes", "points", "topics", "relations", "stories", "prediction", "legacy_atoms"):
+        assert (research_layers / layer).is_dir()
+    for layer in ("transcript-outcomes", "points", "topics", "relations", "stories", "prediction", "evaluation", "sources", "governance"):
+        assert (docs_layers / layer).is_dir()
+    assert (research_layers / "README.md").is_file()
+    for layer in ("outcomes", "points", "topics", "relations", "stories", "prediction", "legacy_atoms"):
+        assert (ROOT / "tests/idea_layers" / layer).is_dir()
+    assert not (ROOT / "research/group_speech_ideas_into_topics.py").exists()
+    assert not (ROOT / "research/extract_layered_transcript_outcomes.py").exists()
+    layout = (research_layers / "README.md").read_text(encoding="utf-8").lower()
+    assert "never same-event features" in layout
+    assert "data/source-archives/speech-content/<same-layer>/" in layout
+
+
 def test_future_stage_scaffolds_exist_without_claiming_implementation() -> None:
     ideas = (ROOT / "speechprefix/stages/ideas/README.md").read_text(encoding="utf-8").lower()
     sentences = (ROOT / "speechprefix/stages/sentences/README.md").read_text(encoding="utf-8").lower()
