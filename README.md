@@ -28,10 +28,10 @@ Reports and local collected corpora must remain Git-ignored and immutable; use a
 ## Repository map
 
 - `speechprefix/stages/ideas/`: active supervised context-to-ideas model, evaluation, and prediction API.
-- `speechprefix/stages/sentences/`: reserved future-stage scaffold; no model implementation yet.
+- `speechprefix/stages/`: separate topic, idea, sentence, word, and character prediction/generation layers; only ideas are active. See [`speechprefix/stages/README.md`](speechprefix/stages/README.md) for boundaries and status.
 - `speechprefix/pipelines/`: reserved for future orchestration; no end-to-end pipeline exists yet.
 - `speechprefix/`: shared transcript parsing, issue-target extraction, CLI, and legacy research prototypes.
-- `tests/`: unit and synthetic-fixture tests.
+- `tests/stages/`: stage-specific tests matching the topic/idea/sentence/word/character folders; `tests/idea_layers/` separately tests transcript-outcome research tooling.
 - `data/`: local ignored transcripts, news snapshots, predictions, and evaluations.
 - `docs/`: active specification, architecture, data audit, evaluation contract, and review policy.
 

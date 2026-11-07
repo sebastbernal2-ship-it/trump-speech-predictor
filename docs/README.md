@@ -19,6 +19,7 @@ These documents describe the active retrospective context-to-ideas project. Repo
 - [`idea-layer/2019-full-year-preliminary-study.md`](idea-layer/stories/2019-full-year-preliminary-study.md) — source coverage and preliminary 2019 calendar-year backtest diagnostics.
 - [`idea-layer/2019-11-04-speech-news-circulation-case-study.md`](idea-layer/stories/2019-11-04-speech-news-circulation-case-study.md) — backwards analysis of all candidate ideas in one speech and their pre-event news/account-post time series.
 - [`architecture.md`](architecture.md) — active model/data flow and code entry points.
+- [`../speechprefix/stages/README.md`](../speechprefix/stages/README.md) — separate topic, idea, sentence, word, and character model-stage contracts and implementation status.
 - [`evaluation.md`](evaluation.md) — chronological splits, metrics, and current development result.
 - [`idea-error-analysis.md`](idea-error-analysis.md) — per-event misses, qualitative failure diagnosis, and prioritized fixes.
 - [`data-audit.md`](data-audit.md) — corpus provenance and label limitations.

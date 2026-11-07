@@ -65,6 +65,23 @@ def test_speech_content_research_layers_have_separate_paths() -> None:
     assert "data/source-archives/speech-content/<same-layer>/" in layout
 
 
+def test_prediction_stages_have_one_folder_per_output_granularity() -> None:
+    stages = ROOT / "speechprefix/stages"
+    tests = ROOT / "tests/stages"
+    levels = ("topics", "ideas", "sentences", "words", "characters")
+    for level in levels:
+        assert (stages / level / "README.md").is_file()
+        assert (tests / level / "README.md").is_file()
+    assert (stages / "README.md").is_file()
+    assert (tests / "README.md").is_file()
+    ideas = (stages / "ideas/README.md").read_text(encoding="utf-8").lower()
+    assert "active package" in ideas
+    assert "does not consume topic predictions" in ideas
+    for level in ("topics", "sentences", "words", "characters"):
+        readme = (stages / level / "README.md").read_text(encoding="utf-8").lower()
+        assert "scaffold only" in readme or "reserved" in readme
+
+
 def test_future_stage_scaffolds_exist_without_claiming_implementation() -> None:
     ideas = (ROOT / "speechprefix/stages/ideas/README.md").read_text(encoding="utf-8").lower()
     sentences = (ROOT / "speechprefix/stages/sentences/README.md").read_text(encoding="utf-8").lower()
