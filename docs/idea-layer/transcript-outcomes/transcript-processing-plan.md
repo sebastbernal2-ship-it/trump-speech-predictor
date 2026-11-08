@@ -1,6 +1,6 @@
 # Transcript-processing plan
 
-This is a proposed data-readiness workflow, not an implemented pipeline or a claim that the corpus is ready for training. Its purpose is to produce transcript-derived targets for characters, words, sentences, topics, and ideas. Prediction inputs and new models are outside this initial processing task; the existing seven-day benchmark and other research remain separate and unchanged. All target-event transcript products are outcomes, never same-event prediction features.
+This is a proposed data-readiness workflow, not a claim that the corpus is ready for training. The mechanical separation step is implemented for explicitly selected text fields; see [its contract](mechanical-separation.md). Its purpose is to produce transcript-derived targets for characters, words, sentences, topics, and ideas. Prediction inputs and new models are outside this initial processing task; the existing seven-day benchmark and other research remain separate and unchanged. All target-event transcript products are outcomes, never same-event prediction features.
 
 ## Available inputs and scope to resolve
 
