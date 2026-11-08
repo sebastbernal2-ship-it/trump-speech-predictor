@@ -6,5 +6,6 @@ This folder defines and audits post-event transcript outcomes: quote-grounded **
 - [`layered-transcript-outcomes-v2-development.md`](layered-transcript-outcomes-v2-development.md) — extraction/retry diagnostics.
 - [`chunked-layered-outcomes-prototype.md`](chunked-layered-outcomes-prototype.md) — long-transcript strategy and limits.
 - [`layered-transcript-outcome-cross-model-audit-v1.md`](layered-transcript-outcome-cross-model-audit-v1.md) — AI diagnostic, not semantic gold.
+- [`transcript-processing-plan.md`](transcript-processing-plan.md) — proposed data-readiness workflow across surface and semantic targets, inventory limitations, and open decisions.
 
 **Leakage rule:** all values derived from the target speech are outcome labels, never same-event prediction inputs.
