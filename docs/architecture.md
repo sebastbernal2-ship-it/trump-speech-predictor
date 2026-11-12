@@ -26,7 +26,7 @@ source evidence ledger (publication + observed/available time + provenance)
                       └─ ranked ideas with story paths and source citations
 ```
 
-`story_graph.py` currently validates typed nodes/edges, source-ledger references, temporal validity, content hashes, and strict or explicitly retrospective as-of projections. Clustering, update detection, entity-profile ingestion, adaptive horizon/relevance learning, and Q-GNN are not implemented. See [`idea-layer/story-graph-architecture.md`](idea-layer/story-graph-architecture.md) for the contract and phase boundaries.
+`story_graph.py` currently validates typed nodes/edges, source-ledger references, temporal validity, content hashes, and strict or explicitly retrospective as-of projections. Clustering, update detection, entity-profile ingestion, adaptive horizon/relevance learning, and Q-GNN are not implemented. See [`idea-layer/story-graph-architecture.md`](idea-layer/stories/story-graph-architecture.md) for the contract and phase boundaries.
 
 Training examples are chronological pairs `(pre-event context, realized transcript ideas)`. For any scored event, fit only on examples from strictly earlier event dates. Group all events from the same date so they do not teach each other's predictions. The target transcript is outcome-only for its own event. It can be training supervision for later events.
 

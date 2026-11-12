@@ -16,52 +16,52 @@ from .semantic_anchors import canonical_sha256 as anchor_canonical_sha256, valid
 from .transcript_outcomes import LINK_RELATIONS, validate_layered_outcome
 
 FINE_RELATIONS = frozenset(LINK_RELATIONS - {"expresses"})
-FINE_RELATION_TAXONOMY_VERSION = "fine-relation-taxonomy-v2"
+FINE_RELATION_TAXONOMY_VERSION = "fine-relation-taxonomy-v3"
 FINE_RELATION_DEFINITIONS = {
-    "supports": "Gives a reason, premise, or evidence for the idea; the connection can be paraphrased as ‘this is a reason to believe/act on the idea.’ Use for general evidence, not a concrete case presented as an example.",
-    "illustrates": "Presents a concrete case as an instance of the idea; the connection can be paraphrased as ‘here is the idea happening in a particular case.’ Prefer this to supports when the case is framed as an example.",
-    "elaborates": "Adds non-limiting scope, mechanism, or implementation detail to the idea; the connection can be paraphrased as ‘more specifically, the idea means/includes this.’ It is not mainly evidence or a concrete instance.",
-    "qualifies": "Changes the idea’s scope or truth conditions by limiting, conditioning, correcting, or stating an exception. Mere additional specification is not enough.",
-    "contextualizes": "Supplies relevant setting/background that aids interpretation but does not itself give a reason, instantiate the idea, specify its content, or alter its scope.",
+    "supports": "Gives a reason, premise, or evidence for the idea; paraphrase: ‘this is a reason to believe/act on the idea.’ The mention must state an evidential or argumentative connection, not merely co-occur with the idea. Use supports only when the text explicitly uses it as a reason/evidence rather than as an example, specification, or background.",
+    "illustrates": "Presents a concrete case as an instance of the idea; paraphrase: ‘here is the idea happening in this particular case.’ Require the source wording to frame the case as an example/instance or make that role unmistakable; do not infer illustration just because a fact could exemplify the idea.",
+    "elaborates": "Adds non-limiting scope, mechanism, or implementation detail to the idea; paraphrase: ‘more specifically, the idea means/includes this.’ The mention must specify what the idea includes, not merely concern the same topic.",
+    "qualifies": "Changes the idea’s scope or truth conditions by limiting, conditioning, correcting, or stating an exception. Require an explicit limitation, condition, correction, or exception; mere additional specification is not enough.",
+    "contextualizes": "Supplies relevant setting/background that aids interpretation but does not itself give a stated reason, function as an explicit example, specify the idea’s content, or alter its scope. If any stronger relation is plausible, abstain rather than defaulting to contextualizes.",
 }
 FINE_RELATION_DECISION_RULES = [
     "If the mention itself directly states the idea, represent that only as an expresses anchor; do not emit a fine edge for that pair.",
-    "Choose qualifies only when the mention restricts, conditions, corrects, or excepts the idea; a non-limiting implementation detail is elaborates.",
-    "Choose illustrates for a particular case explicitly serving as an instance; choose supports for general evidence or a reason. If that distinction is not clear, abstain.",
-    "Choose elaborates for general scope, mechanism, or implementation detail that changes what the idea includes without limiting/correcting it.",
-    "Choose contextualizes only for relevant background with no clear evidential, illustrative, specification, or limiting relation.",
+    "Choose qualifies only when the source explicitly restricts, conditions, corrects, or excepts the idea; a non-limiting implementation detail is elaborates.",
+    "Choose illustrates only for an explicit/unmistakable concrete instance; choose supports only when the source states a general reason/evidential connection. A merely persuasive case is not enough to choose either. If distinction or textual warrant is unclear, abstain.",
+    "Choose elaborates only when the mention clearly specifies the idea's general scope, mechanism, or implementation without limiting/correcting it; same-topic details are not enough.",
+    "Choose contextualizes only for relevant background with no clearly warranted evidential, illustrative, specification, or limiting relation. When stronger labels are possible but unsupported, abstain.",
     "Emit at most one fine relation per mention/idea pair. If multiple labels remain plausible or no relation is clear, omit the edge.",
 ]
 FINE_RELATION_BOUNDARY_EXAMPLES = [
     {
         "idea": "Extend evening bus service.",
-        "mention": "The last bus leaves at 9:45, although many hospital shifts end after 10.",
+        "mention": "Because the last bus leaves at 9:45 and hospital shifts end after 10, extend evening service.",
         "relation": "supports",
-        "why": "General evidence/reason for extending service, not a particular case used as an example.",
+        "why": "The explicit ‘because’ clause states the reason for the proposal; without such a connection, abstain rather than infer supports from relevance alone.",
     },
     {
         "idea": "Extend evening bus service.",
-        "mention": "A nurse leaving the hospital at 10:30 has no bus and walks four miles home.",
+        "mention": "For instance, a nurse leaving the hospital at 10:30 has no bus and walks four miles home.",
         "relation": "illustrates",
-        "why": "A particular case is presented as an instance of the service gap; do not choose supports merely because it is also persuasive.",
+        "why": "‘For instance’ explicitly frames the particular case as an example; without that framing or an unmistakable case relation, abstain.",
     },
     {
         "idea": "Extend evening bus service.",
-        "mention": "The proposal would run hourly buses on routes 2 and 6 until midnight.",
+        "mention": "The proposal includes hourly buses on routes 2 and 6 until midnight.",
         "relation": "elaborates",
-        "why": "Adds general route and schedule details without narrowing or correcting a stated claim.",
+        "why": "‘The proposal includes’ explicitly ties non-limiting implementation details to the idea; a same-topic schedule fact alone is insufficient.",
     },
     {
         "idea": "Extend evening bus service.",
         "mention": "The extension would apply only on weekends.",
         "relation": "qualifies",
-        "why": "The explicit ‘only’ limits the scope of the general proposal; absent that limitation, extra schedule detail would elaborate.",
+        "why": "The explicit ‘only’ directly limits the proposal's scope, making qualifies textually warranted.",
     },
     {
         "idea": "Extend evening bus service.",
-        "mention": "The city added two hospital districts as development spread westward.",
+        "mention": "Against this backdrop, the city added two hospital districts as development spread westward.",
         "relation": "contextualizes",
-        "why": "Relevant setting only; if the mention explicitly argues that growth makes evening service necessary, it would instead support the idea.",
+        "why": "‘Against this backdrop’ explicitly supplies setting for interpreting the idea without stating a reason for it; without a clear contextual link, abstain.",
     },
 ]
 _EDGE_ID = re.compile(r"^edge_[0-9a-f]{16}$")
