@@ -15,7 +15,7 @@ The documentation is split by what each artifact represents, not by model provid
 - [`evaluation/`](evaluation/) — evaluation methods and quality gates.
 - [`sources/`](sources/) and [`governance/`](governance/) — source availability and AI/review policy.
 
-The matching research code is grouped under `research/idea_layers/`; its directory contract is [`research/idea_layers/README.md`](../../research/idea_layers/README.md). Current/frozen local artifacts are not moved during this reorganization. New artifacts belong under `data/source-archives/speech-content/<layer>/`, keeping outcome labels, pre-event features, candidate inventories, and human references in separate directories.
+The matching transcript-outcome research code is grouped under `research/idea_layers/`; its directory contract is [`research/idea_layers/README.md`](../../research/idea_layers/README.md). This is the **semantic annotation/research axis**, not the model-stage hierarchy. The independent output-granularity stages—topics, ideas, sentences, words, and characters—live under [`speechprefix/stages/`](../../speechprefix/stages/README.md). Current/frozen local artifacts are not moved during this organization. New research artifacts belong under `data/source-archives/speech-content/<layer>/`, keeping outcome labels, pre-event features, candidate inventories, and human references separate.
 
 ## Objective
 
@@ -35,9 +35,10 @@ The transcript is the realized outcome, not a feature. For event `i`, never use 
 ## Active code and command
 
 - Model/evaluation: `speechprefix/stages/ideas/model.py`
+- Stage hierarchy and future topic/sentence/word/character stages: [`speechprefix/stages/README.md`](../../speechprefix/stages/README.md)
 - Shared target extraction: `speechprefix/headline_idea_matching.py`
 - CLI: `context-idea-classifier-evaluate` (evaluate/tune) and `context-idea-predict` (rank ideas for a strictly later event from a fitted artifact)
-- Tests: `tests/test_forecasting_context_to_ideas.py`
+- Tests: `tests/stages/ideas/test_ideas_stage.py`
 
 Run the frozen historical context experiment with a new output path:
 

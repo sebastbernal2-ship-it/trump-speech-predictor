@@ -1,6 +1,6 @@
 # Speech-content research layers
 
-Research code is organized by the semantic object or task it produces. This is separate from `speechprefix/idea_layer/`, which contains reusable runtime/model components.
+This tree organizes transcript-outcome and context-research tools by the semantic object/task they produce. It is **not** the model's output-granularity stage tree. The independent topic, idea, sentence, word, and character model stages live under `speechprefix/stages/`; their tests mirror under `tests/stages/`. This tree is separate from `speechprefix/idea_layer/`, which contains reusable runtime/model components.
 
 | Folder | Role | Data status |
 |---|---|---|
