@@ -40,4 +40,4 @@ Each case produced 1 provisional idea; none is released (`training_label_status:
 - 968 (DCPD-202500433): no full inventory; whether other economic claims appear is unknown.
 - 969 (DCPD-202500432): absence of other economic discussion is not established.
 - 1019 (DCPD-202500575): opening is joined in progress with an inaudible annotation; agriculture and Saudi Arabia in answers are unreviewed; 3 uncertain segments.
-- All: no independent annotation or adjudication; entailment of quotes not tested; the 9,636 other inventoried records remain blocked on speaker review.
+- All: no independent annotation or adjudication; entailment of quotes not tested; 9,639 of 9,642 inventoried source-view records remain blocked pending source or speaker review (per the revised-run readiness ledger).
