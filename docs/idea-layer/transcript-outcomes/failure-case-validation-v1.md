@@ -41,3 +41,26 @@ Each case produced 1 provisional idea; none is released (`training_label_status:
 - 969 (DCPD-202500432): absence of other economic discussion is not established.
 - 1019 (DCPD-202500575): opening is joined in progress with an inaudible annotation; agriculture and Saudi Arabia in answers are unreviewed; 3 uncertain segments.
 - All: no independent annotation or adjudication; entailment of quotes not tested; 9,639 of 9,642 inventoried source-view records remain blocked pending source or speaker review (per the revised-run readiness ledger).
+
+## Legacy lexical candidates against the reviewed target spans
+
+`scripts/compare_legacy_candidates.py <transcripts.jsonl> <review.json>` classifies each of the 21 legacy topic/idea candidates for the six records (`transcript-candidates-v1`) by whether its evidence lies in the reviewed target span (output kept locally as `legacy-candidate-comparison.json`). "Outside target" means unreviewed or excluded text, **not** a confirmed false label; "in target" means only that the lexical hit sits in reviewed target text, **not** that the label is correct.
+
+| Line | Legacy candidate (evidence spans: in / partly in / outside target) | Reading |
+| --- | --- | --- |
+| 222 | attack (0/1/2), Iran attacks (0/1/0), terrorism (1/0/0) | The heading/date-merged evidence is now outside the target; `terrorism` hit is the sponsor sentence, which the provisional idea cites. Stance of the idea is not annotated. |
+| 291 | family (1/0/0) | Hit is "their entire family" in the well-wishing; a literal mention, not the main content, and it stays unpromoted. |
+| 501 | job (0/0/2), right (1/0/2), world (1/0/2), peace (1/0/0) | Guterres/"right now" hits fall outside the target. Two in-target hits need review, not promotion: `right` ("doing right now" is temporal, still a false lexical match) and `world` ("world peace" is the President's own wording, so the earlier Guterres-only objection no longer applies to that hit). |
+| 968 | job (0/1/2) | Heading/date portion excluded; job-numbers claim is carried by the idea, not the word. |
+| 969 | economy (0/1/1) | Title-derived hit lies outside the target; one hit partly overlaps. |
+| 1019 | 11 candidates incl. Saudi Arabia, agriculture, trade, immigration, election, deal (0 in target; 21 spans outside) | All lie in reporter questions, Subjects or unreviewed answers; they are unreviewed, not rejected. |
+
+## Failure categories not covered by the six cases
+
+The six hand-selected spans cover one example each of: metadata merged into evidence (222, 968), title/abbreviation pollution (291), title-derived topic (969), other-speaker evidence (501, 1019), editorial Subjects (1019), and one omission per record. They do **not** establish:
+
+- **Unsupported or ambiguous lexical labels at scale.** No automatic fix exists: `topics` are empty in every review, and the legacy lexicon was not changed. `right` ("right now") still matches inside reviewed target text (501). The 89,005 legacy evidence spans in the 1,019-row view were checked only structurally earlier, not re-run against revised targets.
+- **Semantic omissions beyond one idea per case.** Only one provisional idea per record was added; the remaining inventory of each is unreviewed, so omission rates are unmeasured.
+- **Speaker boundaries in turn-based records.** Only 2 of 6 cases (501, 1019) contain a non-President speaker; no automatic speaker selection was exercised on the 7,423 turn-based records.
+- **Stance/degree** of any idea.
+- **Generalization:** zero cases beyond the six; no random sample, no independent annotation, no adjudication. Reviewed examples covered by these checks: 6 records, 6 target spans.
