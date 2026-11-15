@@ -1,5 +1,7 @@
 # Local annotation engine
 
+See the [offline methods research and experiment order](offline-methods-research.md) for the proposed next iteration.
+
 Codex is a reference annotator only. The frozen development run `annotation-review-v7` contains 66 Codex drafts and one chat-authored draft. These are not adjudicated gold. The local rules engine reads only transcript packets, uses no model API, and never sees reference labels during inference. Both reference and candidate artifacts stay local and outcome-only.
 
 ```sh
