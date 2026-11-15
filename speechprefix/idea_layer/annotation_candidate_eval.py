@@ -34,8 +34,8 @@ def score(candidates, turns, references):
     return counts
 
 
-def evaluate(root, parser):
-    raw = (root / 'manifest.json').read_bytes()
+def load_references(root, raw):
+    """Yield validated packet/reference pairs from a frozen manifest."""
     refs = {}
     for row in json.loads(raw)['records']:
         if row['status'] == 'annotated':
@@ -44,8 +44,6 @@ def evaluate(root, parser):
                 raise ValueError('conflicting reference hashes')
     if not refs:
         raise ValueError('no frozen references')
-    totals = defaultdict(Counter)
-    records = []
     for view, checksum in sorted(refs.items()):
         if not re.fullmatch(r'[a-f0-9]{64}', view):
             raise ValueError('invalid view id')
@@ -60,6 +58,14 @@ def evaluate(root, parser):
         ref = validate_transcript_annotation(json.loads(ref_raw), turns)
         if ref['view_id'] != view or ref['event_id'] != packet['event_id']:
             raise ValueError('reference identity mismatch')
+        yield view, packet, turns, ref
+
+
+def evaluate(root, parser):
+    raw = (root / 'manifest.json').read_bytes()
+    totals = defaultdict(Counter)
+    records = []
+    for view, packet, turns, ref in load_references(root, raw):
         mentions = {m['mention_id']: m['evidence'] for m in ref['mentions']}
         point_mentions = {edge['mention_id'] for edge in ref['key_point_mentions']}
         evidence = lambda ids: {(c['turn_id'], c['exact_quote']) for i in ids for c in mentions[i]}
@@ -72,7 +78,7 @@ def evaluate(root, parser):
                 row['scores'][key] = score(spans, turns, evidence(ids))
                 totals[key].update(row['scores'][key])
         records.append(row)
-    return {'reference_views': len(refs), 'manifest_sha256': digest(raw),
+    return {'reference_views': len(records), 'manifest_sha256': digest(raw),
             'parser': {key: parser.meta.get(key) for key in ('lang', 'name', 'version', 'spacy_version')},
             'totals': totals, 'records': records}
 
