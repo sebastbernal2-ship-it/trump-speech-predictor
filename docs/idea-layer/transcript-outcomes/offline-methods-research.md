@@ -19,3 +19,9 @@ Recommendation: parse → propose spans and nodes → rank explicit links → va
 4. Record model revision, license, local weight hashes, CPU throughput/RAM, and coverage; run with offline model loading and explicit weights. Set acceptance thresholds before examining a separate reviewed holdout with long transcripts, different formats and unseen subjects. The 67 drafts are development supervision, not semantic gold; even 67/67 cannot demonstrate unseen accuracy. Do not roll out on structural validity alone.
 
 These sources motivate the component choices; no new component was benchmarked in this research change. The first engineering experiment is the candidate-recall bake-off, then parent-linked detail extraction. Fixing the encoder similarity threshold alone cannot recover missing details or teach stance or tone.
+
+## First candidate benchmark
+
+Run `python -m speechprefix.idea_layer.annotation_candidate_eval --reference-run PATH --output NEW.json` in an environment with spaCy 3.8 and the locally installed English `en_core_web_sm` 3.8.0 pipeline. Model installation is separate; the evaluator does not contact a provider. Use an ignored output path.
+
+On 67 development views, sentence-only proposals hit 157/410 unique turn/quote references exactly and 288/410 at character IoU ≥ 0.5. Adding parsed sentences and clauses raised these to 178 and 342; adding arguments and entities raised them to 196 and 362. The pool grew from 473 to 1,628 unique offsets (summed per view). For key-point-linked evidence, exact hits rose from 119/321 to 149/321 and overlap hits from 225 to 282. These are oracle proposal recall counts, not precision, semantic detail extraction, or end-to-end scores. The previous 108/358 count scores complete mention nodes under a different denominator.
