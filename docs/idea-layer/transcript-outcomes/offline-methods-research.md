@@ -45,3 +45,7 @@ A seeded 16-point assistant spot audit (seed 73, top two per list, partial/uncer
 ## Parent-conditioned sentence selection
 
 `python -m speechprefix.idea_layer.annotation_detail_selector --reference-run PATH --output NEW.json` compares lexical ranking by occurrence label with chronological selection. At two spans per idea (559 proposed links per method), lexical ranking found overlapping key-point evidence for 137/263 points versus 63/263, and exact evidence for 65 versus 31. Only idea labels are supplied to the selector; reference details and quotes are used for scoring. This still measures retrieval under oracle ideas, not semantic detail equivalence or production accuracy.
+
+## Transcript-only detail integration
+
+`python -m speechprefix.idea_layer.annotation_detail_integration --reference-run PATH --output NEW_DIR` attaches extractive sentences to locally extracted ideas before the frozen drafts are read by the scorer. On the 67 drafts it produced 521 detail candidates versus 263 reference details, with zero exact detail or parent-edge matches and zero exact graph matches. This increases proposal volume, not demonstrated accuracy. Keep it experimental; evaluate semantic matches and parent identity before rollout.
