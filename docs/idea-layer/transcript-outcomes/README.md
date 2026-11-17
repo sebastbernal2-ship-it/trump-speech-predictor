@@ -12,3 +12,5 @@ This folder defines and audits post-event transcript outcomes: quote-grounded **
 **Leakage rule:** all values derived from the target speech are outcome labels, never same-event prediction inputs.
 
 The initial local whitespace cleaner and evidence-linked lexical topic/idea candidates are described in [transcript-candidates.md](transcript-candidates.md). These are unreviewed and incomplete semantic outcomes.
+
+[Speaker selection and independent references](speaker-selection-and-references.md) describes the review-driven turn selection interface and the remaining annotation gate.
