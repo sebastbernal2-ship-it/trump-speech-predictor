@@ -10,3 +10,5 @@ This folder defines and audits post-event transcript outcomes: quote-grounded **
 - [`mechanical-separation.md`](mechanical-separation.md) — implemented versioned word, period-split sentence, and character separation.
 
 **Leakage rule:** all values derived from the target speech are outcome labels, never same-event prediction inputs.
+
+The initial local whitespace cleaner and evidence-linked lexical topic/idea candidates are described in [transcript-candidates.md](transcript-candidates.md). These are unreviewed and incomplete semantic outcomes.
