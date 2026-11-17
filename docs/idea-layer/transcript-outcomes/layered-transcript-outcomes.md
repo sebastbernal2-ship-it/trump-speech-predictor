@@ -1,5 +1,7 @@
 # Layered transcript outcomes: mentions → ideas
 
+For the expanded occurrence-based corpus workflow, see [Transcript annotation workflow](annotation-workflow.md). The contract below is historical.
+
 **Status:** versioned research contract and 2019 pilot. It does not replace the active weak phrase labels or the frozen forecasting baseline.
 
 ## Why separate layers
