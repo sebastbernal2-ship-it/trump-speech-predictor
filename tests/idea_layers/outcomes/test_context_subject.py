@@ -17,3 +17,6 @@ def test_context_supplies_interpretation_but_not_evidence():
     assert result['ideas'][0]['occurrence'] == 'the relief bill'
     assert result['mentions'][0]['evidence'] == [{'turn_id': 'a', 'exact_quote': 'Yes.'}]
     assert select_subject('Yes.', {'role': 'context', 'text': 'Do you support the bill or the amendment?'}, parser) is None
+    assert select_subject('Yes.', {'role': 'context', 'text': 'When will you sign the bill?'}, parser) is None
+    assert select_subject('Certificate of commemoration.', None, parser) == 'Certificate of commemoration'
+    assert select_subject('I think Amy is going incredibly well.', None, parser) == 'Amy is going incredibly well'
