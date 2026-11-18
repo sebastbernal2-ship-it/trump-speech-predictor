@@ -32,7 +32,7 @@ def lexical_similarity(labels):
     return lambda i, j: len(tokens[i] & tokens[j]) / max(1, len(tokens[i] | tokens[j]))
 
 
-def annotate(packet, *, similarity=lexical_similarity, threshold=.45, engine=VERSION):
+def annotate(packet, *, similarity=lexical_similarity, threshold=.45, engine=VERSION, labeler=None):
     row = dict(artifact_type='transcript-annotation', schema_version=1, coverage='full_pass',
                event_id=packet['event_id'], view_id=packet['view_id'], generator={'engine': engine},
                annotation_pass='local_engine_candidate', **{k: [] for k in (*LAYERS, *EDGES, 'opinion_targets')})
@@ -45,7 +45,8 @@ def annotate(packet, *, similarity=lexical_similarity, threshold=.45, engine=VER
         tokens = words(span)
         names = re.findall(r'\b(?:[A-Z][a-z]+ ){1,3}[A-Z][a-z]+\b', span)
         pairs = list(zip(tokens, tokens[1:]))
-        labels.append(names[0] if names else ' '.join(max(pairs, key=lambda pair: sum(frequency[w] for w in pair))))
+        fallback = names[0] if names else ' '.join(max(pairs, key=lambda pair: sum(frequency[w] for w in pair)))
+        labels.append((labeler(span) if labeler else None) or fallback)
     similar = similarity(labels)
 
     def node(layer, **fields):
