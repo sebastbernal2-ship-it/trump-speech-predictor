@@ -13,7 +13,7 @@ from .parsed_annotation import label_span
 from .spoken_evidence import has_spoken_evidence
 
 
-def proposals(sentence, parser):
+def proposals(sentence, parser, *, expand=False):
     text = sentence.text.strip()
     noun = label_span(text, parser)
     frame = label_span(text, parser, frames=True, grounded=True)
@@ -26,7 +26,25 @@ def proposals(sentence, parser):
             candidates.append(('relation', text))
     if len(sentence) <= 45 and len(words(text)) >= 2:
         candidates.append(('passage', text))
-    return list({label.casefold(): (kind, label) for kind, label in reversed(candidates)}.values())[::-1]
+    if expand:
+        for chunk in sentence.doc.noun_chunks:
+            if not (sentence.start <= chunk.start < chunk.end <= sentence.end):
+                continue
+            if chunk.root.pos_ in {'NOUN', 'PROPN'} and words(chunk.text):
+                candidates.append(('chunk', chunk.text))
+        for token in sentence:
+            if token.dep_ not in {'advcl', 'ccomp', 'xcomp', 'conj', 'relcl'}:
+                continue
+            members = sorted(t.i for t in token.subtree)
+            if (members and sentence.start <= members[0] <= members[-1] < sentence.end
+                    and len(members) == members[-1] - members[0] + 1 and len(members) <= 32):
+                clause = sentence.doc[members[0]:members[-1] + 1].text
+                if len(words(clause)) >= 2:
+                    candidates.append(('clause', clause))
+    unique = {}
+    for kind, label in candidates:
+        unique.setdefault(label.casefold(), (kind, label))
+    return list(unique.values())
 
 
 def lexical(a, b):
@@ -59,7 +77,7 @@ def embeddings(checkpoint, pairs):
     return vectors
 
 
-def evaluate(root, parser, checkpoint=None):
+def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False):
     from sklearn.feature_extraction import DictVectorizer
     from sklearn.linear_model import Ridge
     from sklearn.model_selection import GroupKFold
@@ -77,6 +95,7 @@ def evaluate(root, parser, checkpoint=None):
         prior = ''
         for turn in packet['turns']:
             if turn['role'] == 'target' and has_spoken_evidence(turn['text']):
+                previous = None
                 for sent in parser(turn['text']).sents:
                     quote = sent.text.strip()
                     if not has_spoken_evidence(quote):
@@ -84,10 +103,20 @@ def evaluate(root, parser, checkpoint=None):
                     targets = {i: labels[i] for i, t, q in grounded if t == turn['turn_id'] and
                                (q in quote or quote in q)}
                     key = view, turn['turn_id'], sent.start_char
-                    for kind, label in proposals(sent, parser):
-                        rows.append(dict(key=key, event=packet['event_id'], kind=kind, label=label,
+                    candidates = [(kind, label, targets) for kind, label in proposals(sent, parser, expand=expand)]
+                    if windows and previous is not None:
+                        combined = turn['text'][previous.start_char:sent.end_char].strip()
+                        if len(combined.split()) <= 60:
+                            window_targets = {i: labels[i] for i, t, q in grounded if t == turn['turn_id']
+                                              and (q in combined or combined in q)}
+                            candidates.append(('window', combined, window_targets))
+                    for kind, label, candidate_targets in candidates:
+                        evidence_start = previous.start_char if kind == 'window' else sent.start_char
+                        rows.append(dict(key=key, evidence_start=evidence_start, evidence_end=sent.end_char,
+                                         event=packet['event_id'], kind=kind, label=label,
                                          quote=quote, context=f'{quote}\nPrevious turn: {prior[-500:]}',
-                                         proxy={i: lexical(label, target) for i, target in targets.items()}))
+                                         proxy={i: lexical(label, target) for i, target in candidate_targets.items()}))
+                    previous = sent
             prior = turn['text']
     started = time.perf_counter()
     dense = embeddings(checkpoint, [(r['context'], r['label']) for r in rows]) if checkpoint else None
@@ -106,7 +135,7 @@ def evaluate(root, parser, checkpoint=None):
             covered.setdefault(method, set()).update((r['key'][0], i) for i, value in r['proxy'].items() if value >= .5)
             if method not in {'pool', 'noun_pool'}:
                 selected.append(dict(method=method, view_id=r['key'][0], turn_id=r['key'][1],
-                                     start=r['key'][2], label=r['label'], kind=r['kind']))
+                                     start=r['evidence_start'], end=r['evidence_end'], label=r['label'], kind=r['kind']))
 
     record('pool', range(len(rows)))
     record('noun_pool', [i for i, r in enumerate(rows) if r['kind'] == 'noun'])
@@ -125,12 +154,30 @@ def evaluate(root, parser, checkpoint=None):
             start = time.perf_counter()
             predictions[name] = model.predict(b)
             rank_seconds[name] += time.perf_counter() - start
-        predictions['syntax_first'] = [dict(relation=3, frame=2, noun=1, passage=0)[rows[i]['kind']] for i in test]
+        predictions['syntax_first'] = [dict(relation=3, frame=2, noun=1, passage=0, clause=-1, chunk=-2, window=-3)[rows[i]['kind']] for i in test]
         for method, scores in predictions.items():
             ordered = sorted(zip(test, scores), key=lambda x: (rows[x[0]]['key'], -x[1], x[0]))
-            record(method, [next(group)[0] for _, group in groupby(ordered, key=lambda x: rows[x[0]]['key'])])
+            groups = [[i for i, _ in group] for _, group in groupby(ordered, key=lambda x: rows[x[0]]['key'])]
+            record(method, [group[0] for group in groups])
+            if expand:
+                budgeted = []
+                for group in groups:
+                    first = group[0]
+                    budgeted.append(first)
+                    second = next((i for i in group[1:] if lexical(rows[i]['label'], rows[first]['label']) < .8), None)
+                    if second is not None:
+                        budgeted.append(second)
+                record(f'{method}_diverse_top2', budgeted)
+    pool_hits = covered.get('pool', set())
+    sparse_hits = covered.get('sparse', set())
     return dict(reference_manifest_sha256=digest(raw), folds=5, reference_ideas=len(evidence_keys),
-                encoder_seconds=encoder_seconds, ranking_predict_seconds=dict(rank_seconds),
+                sparse_gap=dict(no_pool_proxy_hit=len(evidence_keys - pool_hits),
+                                pool_hit_not_selected=len(pool_hits - sparse_hits),
+                                selected_proxy_hit=len(sparse_hits)),
+                expanded=expand, windows=windows, encoder_seconds=encoder_seconds, ranking_predict_seconds=dict(rank_seconds),
+                idea_diagnostics=[dict(view_id=view, reference_id=idea,
+                                       proxy_hits=[name for name in totals if (view, idea) in covered.get(name, ())])
+                                  for view, idea in sorted(evidence_keys)],
                 checkpoint=checkpoint.name if checkpoint else None,
                 methods={method: dict(emitted=count, reference_ideas_with_lexical_proxy_hit=len(covered.get(method, ())))
                          for method, count in totals.items()}, selections=selected)
@@ -141,11 +188,13 @@ def main():
     cli.add_argument('--reference-run', type=Path, required=True)
     cli.add_argument('--output', type=Path, required=True)
     cli.add_argument('--checkpoint', type=Path)
+    cli.add_argument('--expand', action='store_true')
+    cli.add_argument('--windows', action='store_true')
     args = cli.parse_args()
     import spacy
-    report = evaluate(args.reference_run, spacy.load('en_core_web_sm', disable=['ner']), args.checkpoint)
+    report = evaluate(args.reference_run, spacy.load('en_core_web_sm', disable=['ner']), args.checkpoint, expand=args.expand, windows=args.windows)
     write_json(args.output, report)
-    print(json.dumps({k: v for k, v in report.items() if k != 'selections'}, indent=2))
+    print(json.dumps({k: v for k, v in report.items() if k not in {'selections', 'idea_diagnostics'}}, indent=2))
 
 
 if __name__ == '__main__':
