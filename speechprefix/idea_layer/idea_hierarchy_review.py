@@ -1,4 +1,4 @@
-"""Queue possible top-level promotions for evidence-grounded review."""
+"""Queue cross-scale idea comparisons for evidence-grounded review."""
 import argparse
 from collections import Counter
 import json
@@ -40,7 +40,8 @@ def possible_promotions(inventory, reference, turns):
                        reference_detail_evidence=detail_evidence[ident], reference_parent_id=parent,
                        reference_parent=ideas[parent], overlapping_reference_idea_ids=top_level_options,
                        exact_detail_label=subject_signature(idea['label']) == subject_signature(point['detail']),
-                       verdict=None)
+                       subject_validity=None, scale_relation_to_parent=None,
+                       attachment_verdict=None)
 
 
 def main():
@@ -68,7 +69,9 @@ def main():
                   exact_detail_label_pairs=sum(r['exact_detail_label'] for r in records))
     write_json(args.output, dict(reference_manifest_sha256=digest(raw), inventory_sha256=digest(inventory_raw),
                                  method=args.method, counts=counts, records=records,
-                                 verdicts=['detail_promoted', 'independent_idea', 'parent_idea', 'unrelated', 'unclear']))
+                                 verdicts=dict(subject_validity=['valid', 'unsupported', 'not_substantive', 'unclear'],
+                                               scale_relation_to_parent=['same', 'narrower', 'broader', 'different', 'unclear'],
+                                               attachment_verdict=['warranted', 'not_warranted', 'unclear'])))
     print(json.dumps(counts, indent=2))
 
 

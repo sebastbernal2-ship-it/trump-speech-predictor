@@ -15,6 +15,9 @@ def test_detail_candidate_is_queued_not_automatically_demoted():
     inventory = [dict(label='Battle of Kyiv', evidence=[span])]
     result, = possible_promotions(inventory, ref, {'t': quote})
     assert result['reference_parent_id'] == 'i'
-    assert result['exact_detail_label'] and result['verdict'] is None
+    assert result['exact_detail_label']
+    assert result['subject_validity'] is None
+    assert result['scale_relation_to_parent'] is None
+    assert result['attachment_verdict'] is None
     with pytest.raises(ValueError, match='evidence span'):
         list(possible_promotions(inventory, ref, {'t': 'Different text.'}))
