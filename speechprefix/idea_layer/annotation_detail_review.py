@@ -28,6 +28,24 @@ def review_items(detail, candidates, limit):
             for f1, s, text in rank(detail, candidates, limit)]
 
 
+def adjacent_windows(bank, turns, max_words=60):
+    """Propose two-sentence passages without crossing source turns."""
+    by_turn = {}
+    for item in bank:
+        if item.kind == 'parsed_sentence':
+            by_turn.setdefault(item.turn_id, []).append((item.start, item.end))
+    windows = {}
+    for turn, offsets in by_turn.items():
+        ordered = sorted(set(offsets))
+        for (start, end), (next_start, next_end) in zip(ordered, ordered[1:]):
+            text = turns[turn]
+            if end <= next_start and not text[end:next_start].strip():
+                quote = text[start:next_end]
+                if len(quote.split()) <= max_words:
+                    windows[turn, start, next_end] = quote
+    return windows
+
+
 def build(root, parser, limit):
     raw = (root / 'manifest.json').read_bytes()
     rows = []
@@ -35,6 +53,7 @@ def build(root, parser, limit):
     for view, packet, turns, ref in load_references(root, raw):
         views += 1
         bank = propose(packet, parser)
+        pairs = adjacent_windows(bank, turns)
         mentions = {m['mention_id']: m['evidence'] for m in ref['mentions']}
         parents = {e['key_point_id']: e['idea_id'] for e in ref['key_point_ideas']}
         ideas = {i['idea_id']: i['occurrence'] for i in ref['ideas']}
@@ -54,11 +73,14 @@ def build(root, parser, limit):
                 expanded[span] = text
                 if c.kind in {'argument', 'entity', 'clause'}:
                     candidates[span] = text
+            with_pairs = {**expanded, **{span: quote for span, quote in pairs.items() if any(
+                turn == span[0] and max(a, span[1]) < min(b, span[2]) for turn, a, b in windows)}}
             rows.append(dict(view_id=view, key_point_id=ident, reference_detail=point['detail'],
                              reference_parent=ideas[parents[ident]], evidence=evidence,
                              eligible_spans=len(candidates), review_verdict=None,
                              candidates=review_items(point['detail'], candidates, limit),
-                             expanded_candidates=review_items(point['detail'], expanded, limit)))
+                             expanded_candidates=review_items(point['detail'], expanded, limit),
+                             window_candidates=review_items(point['detail'], with_pairs, limit)))
     return dict(reference_manifest_sha256=digest(raw), reference_views=views, top_k=limit,
                 oracle_evidence_windows=True, records=rows)
 
