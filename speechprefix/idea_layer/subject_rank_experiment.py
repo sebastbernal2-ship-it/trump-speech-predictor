@@ -75,6 +75,19 @@ def lexical(a, b):
     return 2 * len(a & b) / max(1, len(a) + len(b))
 
 
+def specificity_features(label, parser):
+    doc = parser(label)
+    return {
+        'nominal_heads': sum(t.pos_ in {'NOUN', 'PROPN'} and not t.is_stop for t in doc),
+        'proper_names': sum(t.pos_ == 'PROPN' for t in doc),
+        'content_verbs': sum(t.pos_ == 'VERB' for t in doc),
+        'clause_arguments': sum(t.dep_ in {'nsubj', 'nsubjpass', 'dobj', 'obj', 'pobj'}
+                                and t.pos_ in {'NOUN', 'PROPN'} for t in doc),
+        'unresolved_arguments': sum(t.pos_ == 'PRON' and t.lower_ not in {'i', 'we', 'you'}
+                                    and t.dep_ in {'nsubj', 'nsubjpass', 'dobj', 'obj', 'pobj'} for t in doc),
+    }
+
+
 def features(kind, label, quote):
     return {'kind': kind, 'words': len(words(label)), 'coverage': lexical(label, quote),
             'contains_number': any(c.isdigit() for c in label)}
@@ -172,6 +185,8 @@ def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, ques
     dense = embeddings(checkpoint, [(r['context'], r['label']) for r in rows]) if checkpoint else None
     encoder_seconds = time.perf_counter() - started if checkpoint else None
     features_by_row = [features(r['kind'], r['label'], r['quote']) for r in rows]
+    specificity = {label: specificity_features(label, parser) for label in dict.fromkeys(r['label'] for r in rows)}
+    enriched = [{**base, **specificity[row['label']]} for base, row in zip(features_by_row, rows)]
     y = np.array([max(r['proxy'].values(), default=0.) for r in rows])
     totals = Counter()
     rank_seconds = Counter()
@@ -194,7 +209,10 @@ def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, ques
         vectorizer = DictVectorizer()
         x_train = vectorizer.fit_transform([features_by_row[i] for i in train])
         x_test = vectorizer.transform([features_by_row[i] for i in test])
-        matrices = {'sparse': (x_train, x_test)}
+        richer_vectorizer = DictVectorizer()
+        matrices = {'sparse': (x_train, x_test),
+                    'specificity': (richer_vectorizer.fit_transform([enriched[i] for i in train]),
+                                    richer_vectorizer.transform([enriched[i] for i in test]))}
         if dense is not None:
             vectors = np.asarray(dense)
             matrices['contextual'] = (hstack([x_train, vectors[train]]).tocsr(),
