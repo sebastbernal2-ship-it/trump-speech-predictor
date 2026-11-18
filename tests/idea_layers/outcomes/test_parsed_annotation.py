@@ -10,3 +10,7 @@ def test_extracts_noun_phrase_instead_of_discourse_marker():
     parser = spacy.load('en_core_web_sm', disable=['ner'])
     assert label_span('Remember, we must protect college sports.', parser) == 'college sports'
     assert label_span('Here we go.', parser) is None
+    assert label_span('The county funds the transit program.', parser, frames=True) == (
+        'funding of the transit program by The county'
+    )
+    assert label_span('Here we go.', parser, frames=True) is None
