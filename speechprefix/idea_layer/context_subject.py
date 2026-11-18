@@ -19,4 +19,14 @@ def select_subject(span, previous, parser):
             polar = first is not None and first.pos_ == 'AUX'
             if polar and len(candidates) == 1 and not any(t.dep_ in {'conj', 'neg'} for t in doc):
                 return candidates[0].text
-    return label_span(span, parser, frames=True, grounded=True)
+    doc = parser(span)
+    sentences = list(doc.sents)
+    if len(sentences) == 1:
+        sentence = sentences[0]
+        root = sentence.root
+        # In a nominal fragment, preserve complements rather than promoting a
+        # nested noun to the subject of the entire fragment.
+        if root.pos_ in {'NOUN', 'PROPN'} and any(t.dep_ == 'prep' for t in root.children):
+            if len(sentence) <= 12 and not any(t.pos_ in {'VERB', 'AUX'} for t in sentence):
+                return sentence.text.rstrip('.!?').strip()
+    return label_span(span, lambda _: doc, frames=True, grounded=True)
