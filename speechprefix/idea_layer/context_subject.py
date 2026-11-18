@@ -29,4 +29,13 @@ def select_subject(span, previous, parser):
         if root.pos_ in {'NOUN', 'PROPN'} and any(t.dep_ == 'prep' for t in root.children):
             if len(sentence) <= 12 and not any(t.pos_ in {'VERB', 'AUX'} for t in sentence):
                 return sentence.text.rstrip('.!?').strip()
+        if root.lemma_ in {'believe', 'think', 'say', 'claim', 'expect'}:
+            for child in root.children:
+                if child.dep_ != 'ccomp' or not any(
+                    t.dep_ in {'nsubj', 'nsubjpass'} and t.pos_ in {'NOUN', 'PROPN'} for t in child.children
+                ):
+                    continue
+                members = sorted(t.i for t in child.subtree if not t.is_punct)
+                if members and members[-1] - members[0] < 16:
+                    return doc[members[0]:members[-1] + 1].text
     return label_span(span, lambda _: doc, frames=True, grounded=True)
