@@ -33,7 +33,14 @@ def lexical_similarity(labels):
     return lambda i, j: len(tokens[i] & tokens[j]) / max(1, len(tokens[i] | tokens[j]))
 
 
-def annotate(packet, *, similarity=lexical_similarity, threshold=.45, engine=VERSION, labeler=None):
+def cue_stance(span):
+    if '?' not in span:
+        return next((name for name, pattern in STANCE if pattern.search(span)), None)
+    return None
+
+
+def annotate(packet, *, similarity=lexical_similarity, threshold=.45, engine=VERSION,
+             labeler=None, stance_classifier=cue_stance):
     row = dict(artifact_type='transcript-annotation', schema_version=1, coverage='full_pass',
                event_id=packet['event_id'], view_id=packet['view_id'], generator={'engine': engine},
                annotation_pass='local_engine_candidate', **{k: [] for k in (*LAYERS, *EDGES, 'opinion_targets')})
@@ -79,7 +86,7 @@ def annotate(packet, *, similarity=lexical_similarity, threshold=.45, engine=VER
             point = node('key_points', detail=detail[1].strip(), uncertainty='Detail cue; review attachment.')
             link('key_point_ideas', point, found)
             link('key_point_mentions', point, mention)
-        if '?' not in span and (stance := next((name for name, pattern in STANCE if pattern.search(span)), None)):
+        if stance := stance_classifier(span):
             opinion = node('opinions', text=span, attribution='speaker', stance=stance,
                            uncertainty='Surface cue; attribution, scope and intent require review.')
             link('opinion_mentions', opinion, mention)
