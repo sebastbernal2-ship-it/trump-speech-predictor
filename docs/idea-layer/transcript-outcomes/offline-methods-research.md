@@ -67,3 +67,5 @@ The parsed evaluator has an opt-in `--frames` ablation. Selected active verbs wi
 ## Reviewed subject-pair diagnostic
 
 An assistant inspected the top two queued pairs for a seeded sample of 16 unmatched ideas (seed 55). Five conveyed the same subject, two were broader/narrower, six were different or lost the subject, and three had an unresolved subject or a questionable layer assignment. Labels must convey the subject; citing the same sentence does not rescue a generic label. This is a small, non-adjudicated shortlist audit of the classical detail-integration run, not an overall semantic score or an evaluation of the later event-frame variant. The frozen drafts remain unchanged.
+
+The opt-in `--grounded` experiment adds predicate–argument phrases and bounded noun complements. On the same 16-point diagnostic it matched 5/16, unchanged in aggregate: it recovered the debt and meeting subjects but lost other matches. The full conservative score was 1/282. Keep experimental; unresolved references and tone-only references were not counted as successes.
