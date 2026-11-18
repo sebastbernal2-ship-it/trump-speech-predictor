@@ -49,3 +49,7 @@ A seeded 16-point assistant spot audit (seed 73, top two per list, partial/uncer
 ## Transcript-only detail integration
 
 `python -m speechprefix.idea_layer.annotation_detail_integration --reference-run PATH --output NEW_DIR` attaches extractive sentences to locally extracted ideas before the frozen drafts are read by the scorer. On the 67 drafts it produced 521 detail candidates versus 263 reference details, with zero exact detail or parent-edge matches and zero exact graph matches. This increases proposal volume, not demonstrated accuracy. Keep it experimental; evaluate semantic matches and parent identity before rollout.
+
+## Idea agreement beyond exact wording
+
+The evaluator reports one-to-one `subject_alignment` separately from exact graph agreement, with unmatched IDs for review. It accepts Russian–Ukrainian War and Ukrainian war vs Russia as the same occurrence, without dropping event qualifiers or reversing directional relationships. This conservative alias check is a floor, not a general paraphrase scorer. It leaves evidence validation unchanged. On the 67 development drafts, the integrated engine still aligned only 1 of 282 reference ideas (373 proposed); unmatched labels are not automatically semantic errors.
