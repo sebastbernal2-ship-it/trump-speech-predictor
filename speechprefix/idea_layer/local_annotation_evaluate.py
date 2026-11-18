@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from collections.abc import Callable
 import json
 from pathlib import Path
 import re
@@ -45,7 +46,9 @@ def compare(candidate, reference):
             for name, value in expected.items()}
 
 
-def evaluate(reference_run: Path, output: Path):
+def evaluate(reference_run: Path, output: Path, *,
+             annotator: Callable[[dict], dict] = annotate, engine: str = VERSION):
+    """Score a transcript-only annotator against one frozen reference run."""
     manifest_bytes = (reference_run / 'manifest.json').read_bytes()
     manifest = json.loads(manifest_bytes)
     refs = {}
@@ -66,14 +69,18 @@ def evaluate(reference_run: Path, output: Path):
         packet = json.loads((reference_run / 'packets' / name).read_bytes())
         if packet.pop('view_id') != view or digest(json.dumps(packet, sort_keys=True, ensure_ascii=False).encode()) != view:
             raise ValueError('packet digest mismatch')
-        candidate = annotate({**packet, 'view_id': view})
+        targets = {t['turn_id']: t['text'] for t in packet['turns'] if t['role'] == 'target'}
+        candidate = annotator({**packet, 'view_id': view})
+        if candidate.get('view_id') != view or candidate.get('event_id') != packet['event_id']:
+            raise ValueError('candidate identity mismatch')
+        candidate = validate_transcript_annotation(candidate, targets)
         raw_ref = (reference_run / 'outcomes' / name).read_bytes()
         if digest(raw_ref) != checksum:
             raise ValueError('reference digest mismatch')
         ref = json.loads(raw_ref)
         if ref['view_id'] != view or ref['event_id'] != packet['event_id']:
             raise ValueError('reference identity mismatch')
-        validate_transcript_annotation(ref, {t['turn_id']: t['text'] for t in packet['turns'] if t['role'] == 'target'})
+        validate_transcript_annotation(ref, targets)
         score = compare(candidate, ref)
         write_json(output / name, candidate)
         results.append({'view_id': view, 'abstained': not candidate['ideas'],
@@ -81,7 +88,7 @@ def evaluate(reference_run: Path, output: Path):
                         'layers': score})
         for layer, counts in score.items():
             total.setdefault(layer, Counter()).update(counts)
-    summary = {'engine': VERSION, 'reference_manifest_sha256': digest(manifest_bytes),
+    summary = {'engine': engine, 'reference_manifest_sha256': digest(manifest_bytes),
                'reference_views': len(results), 'exact_agreement': sum(r['exact_agreement'] for r in results),
                'abstained': sum(r['abstained'] for r in results), 'layers': total}
     write_json(output / 'evaluation.json', {**summary, 'records': results})
@@ -92,8 +99,18 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--reference-run', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--engine', choices=('rules', 'classical', 'encoder'), default='rules')
+    parser.add_argument('--model-dir', type=Path)
     args = parser.parse_args()
-    print(json.dumps(evaluate(args.reference_run, args.output), indent=2))
+    annotator, version = annotate, VERSION
+    if args.engine == 'classical':
+        from .classical_annotation import annotate as annotator, VERSION as version
+    elif args.engine == 'encoder':
+        from .encoder_annotation import build_annotator, VERSION as version
+        if args.model_dir is None:
+            parser.error('--engine encoder requires --model-dir')
+        annotator = build_annotator(args.model_dir)
+    print(json.dumps(evaluate(args.reference_run, args.output, annotator=annotator, engine=version), indent=2))
 
 
 if __name__ == '__main__':
