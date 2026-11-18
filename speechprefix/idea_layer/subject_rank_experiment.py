@@ -9,6 +9,7 @@ import time
 from .annotation_batch import digest, write_json
 from .annotation_candidate_eval import load_references
 from .classical_annotation import words
+from .context_subject import resolve_question_subject
 from .parsed_annotation import label_span
 from .spoken_evidence import has_spoken_evidence
 
@@ -86,7 +87,7 @@ def embeddings(checkpoint, pairs):
     return vectors
 
 
-def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, questions=False):
+def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, questions=False, resolved_questions=False):
     from sklearn.feature_extraction import DictVectorizer
     from sklearn.linear_model import Ridge
     from sklearn.model_selection import GroupKFold
@@ -117,6 +118,10 @@ def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, ques
                     if questions and previous is None and prior_role == 'context':
                         candidates.extend(('question_subject', label, targets) for label in question_subjects(prior, parser)
                                           if label.casefold() not in {text.casefold() for _, text, _ in candidates})
+                    if resolved_questions and previous is None and prior_role == 'context':
+                        label = resolve_question_subject(quote, {'role': prior_role, 'text': prior}, parser)
+                        if label and label.casefold() not in {text.casefold() for _, text, _ in candidates}:
+                            candidates.append(('resolved_question', label, targets))
                     if windows and previous is not None:
                         combined = turn['text'][previous.start_char:sent.end_char].strip()
                         if len(combined.split()) <= 60:
@@ -168,7 +173,7 @@ def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, ques
             start = time.perf_counter()
             predictions[name] = model.predict(b)
             rank_seconds[name] += time.perf_counter() - start
-        predictions['syntax_first'] = [dict(relation=3, frame=2, noun=1, passage=0, clause=-1, chunk=-2, window=-3, question_subject=-4)[rows[i]['kind']] for i in test]
+        predictions['syntax_first'] = [dict(relation=3, frame=2, noun=1, passage=0, clause=-1, chunk=-2, window=-3, question_subject=-4, resolved_question=4)[rows[i]['kind']] for i in test]
         for method, scores in predictions.items():
             ordered = sorted(zip(test, scores), key=lambda x: (rows[x[0]]['key'], -x[1], x[0]))
             groups = [[i for i, _ in group] for _, group in groupby(ordered, key=lambda x: rows[x[0]]['key'])]
@@ -188,7 +193,7 @@ def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, ques
                 sparse_gap=dict(no_pool_proxy_hit=len(evidence_keys - pool_hits),
                                 pool_hit_not_selected=len(pool_hits - sparse_hits),
                                 selected_proxy_hit=len(sparse_hits)),
-                expanded=expand, windows=windows, questions=questions, encoder_seconds=encoder_seconds, ranking_predict_seconds=dict(rank_seconds),
+                expanded=expand, windows=windows, questions=questions, resolved_questions=resolved_questions, encoder_seconds=encoder_seconds, ranking_predict_seconds=dict(rank_seconds),
                 idea_diagnostics=[dict(view_id=view, reference_id=idea,
                                        proxy_hits=[name for name in totals if (view, idea) in covered.get(name, ())])
                                   for view, idea in sorted(evidence_keys)],
@@ -205,9 +210,11 @@ def main():
     cli.add_argument('--expand', action='store_true')
     cli.add_argument('--windows', action='store_true')
     cli.add_argument('--questions', action='store_true')
+    cli.add_argument('--resolved-questions', action='store_true')
     args = cli.parse_args()
     import spacy
-    report = evaluate(args.reference_run, spacy.load('en_core_web_sm', disable=['ner']), args.checkpoint, expand=args.expand, windows=args.windows, questions=args.questions)
+    report = evaluate(args.reference_run, spacy.load('en_core_web_sm', disable=['ner']), args.checkpoint, expand=args.expand, windows=args.windows, questions=args.questions,
+                      resolved_questions=args.resolved_questions)
     write_json(args.output, report)
     print(json.dumps({k: v for k, v in report.items() if k not in {'selections', 'idea_diagnostics'}}, indent=2))
 

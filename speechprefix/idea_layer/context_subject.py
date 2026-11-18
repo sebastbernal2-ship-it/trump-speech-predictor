@@ -7,8 +7,8 @@ from .parsed_annotation import label_span
 _SHORT_RESPONSE = re.compile(r"(?:yes|no|absolutely|not yet|i (?:do|don't|will|won't))\s*[.!]?", re.I)
 
 
-def select_subject(span, previous, parser):
-    """Resolve short answers to a single explicit subject in the prior question."""
+def resolve_question_subject(span, previous, parser):
+    """Return a subject only when a short answer resolves to one question argument."""
     if previous and previous['role'] == 'context' and _SHORT_RESPONSE.fullmatch(span):
         question = previous['text'].strip()
         if question.endswith('?') and question.count('?') == 1:
@@ -19,6 +19,13 @@ def select_subject(span, previous, parser):
             polar = first is not None and first.pos_ == 'AUX'
             if polar and len(candidates) == 1 and not any(t.dep_ in {'conj', 'neg'} for t in doc):
                 return candidates[0].text
+    return None
+
+
+def select_subject(span, previous, parser):
+    """Prefer a resolved question subject, then inspect the target span."""
+    if subject := resolve_question_subject(span, previous, parser):
+        return subject
     doc = parser(span)
     sentences = list(doc.sents)
     if len(sentences) == 1:
