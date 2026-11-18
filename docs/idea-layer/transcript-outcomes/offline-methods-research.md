@@ -25,3 +25,9 @@ These sources motivate the component choices; no new component was benchmarked i
 Run `python -m speechprefix.idea_layer.annotation_candidate_eval --reference-run PATH --output NEW.json` in an environment with spaCy 3.8 and the locally installed English `en_core_web_sm` 3.8.0 pipeline. Model installation is separate; the evaluator does not contact a provider. Use an ignored output path.
 
 On 67 development views, sentence-only proposals hit 157/410 unique turn/quote references exactly and 288/410 at character IoU ≥ 0.5. Adding parsed sentences and clauses raised these to 178 and 342; adding arguments and entities raised them to 196 and 362. The pool grew from 473 to 1,628 unique offsets (summed per view). For key-point-linked evidence, exact hits rose from 119/321 to 149/321 and overlap hits from 225 to 282. These are oracle proposal recall counts, not precision, semantic detail extraction, or end-to-end scores. The previous 108/358 count scores complete mention nodes under a different denominator.
+
+## Event-grouped span ranking
+
+Run `python -m speechprefix.idea_layer.annotation_span_rank --reference-run PATH --output NEW.json --budget 8` with the same parser and scikit-learn (tested 1.9.1). Five event-ID-grouped folds train sparse logistic rankers on same-turn character IoU >= 0.5 labels. This is development cross-validation, not a near-duplicate audit or an independent holdout.
+
+At the same budget (480 selected spans summed across 67 views), learned versus sentence-first ranking hit 237 vs 246 of 410 evidence references by overlap (119 each exactly). For key-point-linked evidence it hit 172 vs 178 of 321 by overlap and 85 vs 81 exactly. Keep sentence-first as the overlap baseline. Detail-evidence ranking does not identify the detail itself or its parent; test parent-link candidates and ranking separately. This diagnostic does not replace production extraction or forecasting.
