@@ -47,6 +47,15 @@ def proposals(sentence, parser, *, expand=False):
     return list(unique.values())
 
 
+def question_subjects(question, parser):
+    """Offer grounded context hypotheses without citing the interviewer as evidence."""
+    if not question.rstrip().endswith('?') or len(question.split()) > 80:
+        return []
+    doc = parser(question)
+    return list(dict.fromkeys(chunk.text for chunk in doc.noun_chunks
+                              if chunk.root.pos_ in {'NOUN', 'PROPN'} and words(chunk.text)))[:6]
+
+
 def lexical(a, b):
     a, b = set(words(a)), set(words(b))
     return 2 * len(a & b) / max(1, len(a) + len(b))
@@ -77,7 +86,7 @@ def embeddings(checkpoint, pairs):
     return vectors
 
 
-def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False):
+def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, questions=False):
     from sklearn.feature_extraction import DictVectorizer
     from sklearn.linear_model import Ridge
     from sklearn.model_selection import GroupKFold
@@ -93,6 +102,7 @@ def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False):
                     for c in mentions[e['mention_id']]]
         evidence_keys.update((view, i) for i in labels)
         prior = ''
+        prior_role = None
         for turn in packet['turns']:
             if turn['role'] == 'target' and has_spoken_evidence(turn['text']):
                 previous = None
@@ -104,6 +114,9 @@ def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False):
                                (q in quote or quote in q)}
                     key = view, turn['turn_id'], sent.start_char
                     candidates = [(kind, label, targets) for kind, label in proposals(sent, parser, expand=expand)]
+                    if questions and previous is None and prior_role == 'context':
+                        candidates.extend(('question_subject', label, targets) for label in question_subjects(prior, parser)
+                                          if label.casefold() not in {text.casefold() for _, text, _ in candidates})
                     if windows and previous is not None:
                         combined = turn['text'][previous.start_char:sent.end_char].strip()
                         if len(combined.split()) <= 60:
@@ -118,6 +131,7 @@ def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False):
                                          proxy={i: lexical(label, target) for i, target in candidate_targets.items()}))
                     previous = sent
             prior = turn['text']
+            prior_role = turn['role']
     started = time.perf_counter()
     dense = embeddings(checkpoint, [(r['context'], r['label']) for r in rows]) if checkpoint else None
     encoder_seconds = time.perf_counter() - started if checkpoint else None
@@ -154,7 +168,7 @@ def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False):
             start = time.perf_counter()
             predictions[name] = model.predict(b)
             rank_seconds[name] += time.perf_counter() - start
-        predictions['syntax_first'] = [dict(relation=3, frame=2, noun=1, passage=0, clause=-1, chunk=-2, window=-3)[rows[i]['kind']] for i in test]
+        predictions['syntax_first'] = [dict(relation=3, frame=2, noun=1, passage=0, clause=-1, chunk=-2, window=-3, question_subject=-4)[rows[i]['kind']] for i in test]
         for method, scores in predictions.items():
             ordered = sorted(zip(test, scores), key=lambda x: (rows[x[0]]['key'], -x[1], x[0]))
             groups = [[i for i, _ in group] for _, group in groupby(ordered, key=lambda x: rows[x[0]]['key'])]
@@ -174,7 +188,7 @@ def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False):
                 sparse_gap=dict(no_pool_proxy_hit=len(evidence_keys - pool_hits),
                                 pool_hit_not_selected=len(pool_hits - sparse_hits),
                                 selected_proxy_hit=len(sparse_hits)),
-                expanded=expand, windows=windows, encoder_seconds=encoder_seconds, ranking_predict_seconds=dict(rank_seconds),
+                expanded=expand, windows=windows, questions=questions, encoder_seconds=encoder_seconds, ranking_predict_seconds=dict(rank_seconds),
                 idea_diagnostics=[dict(view_id=view, reference_id=idea,
                                        proxy_hits=[name for name in totals if (view, idea) in covered.get(name, ())])
                                   for view, idea in sorted(evidence_keys)],
@@ -190,9 +204,10 @@ def main():
     cli.add_argument('--checkpoint', type=Path)
     cli.add_argument('--expand', action='store_true')
     cli.add_argument('--windows', action='store_true')
+    cli.add_argument('--questions', action='store_true')
     args = cli.parse_args()
     import spacy
-    report = evaluate(args.reference_run, spacy.load('en_core_web_sm', disable=['ner']), args.checkpoint, expand=args.expand, windows=args.windows)
+    report = evaluate(args.reference_run, spacy.load('en_core_web_sm', disable=['ner']), args.checkpoint, expand=args.expand, windows=args.windows, questions=args.questions)
     write_json(args.output, report)
     print(json.dumps({k: v for k, v in report.items() if k not in {'selections', 'idea_diagnostics'}}, indent=2))
 

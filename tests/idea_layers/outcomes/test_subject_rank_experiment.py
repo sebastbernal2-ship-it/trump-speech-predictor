@@ -1,6 +1,6 @@
 import pytest
 
-from speechprefix.idea_layer.subject_rank_experiment import proposals
+from speechprefix.idea_layer.subject_rank_experiment import proposals, question_subjects
 
 
 def test_proposals_keep_explicit_result_with_action():
@@ -10,3 +10,5 @@ def test_proposals_keep_explicit_result_with_action():
     parser = spacy.load('en_core_web_sm', disable=['ner'])
     text = 'We strengthened the bridge so that trucks could cross safely.'
     assert ('relation', text) in proposals(next(parser(text).sents), parser)
+    assert 'the relief bill' in question_subjects('Do you support the relief bill?', parser)
+    assert question_subjects('You support the relief bill.', parser) == []
