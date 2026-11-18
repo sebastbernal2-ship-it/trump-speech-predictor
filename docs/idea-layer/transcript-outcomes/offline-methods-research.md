@@ -35,3 +35,7 @@ At the same budget (480 selected spans summed across 67 views), learned versus s
 ## Detail and parent-link diagnostic
 
 Run `python -m speechprefix.idea_layer.annotation_detail_link --reference-run PATH --output NEW.json` with the same local parser. On the 67 drafts, 1,144 argument/entity/clause proposals yielded zero normalized full-text detail matches with supporting evidence. This strict score does not measure paraphrase equivalence. With reference details, evidence and idea labels supplied, the lexical linker chose the correct parent for 210/263 details (240 assigned) and retrieved it in the top three for 239/263. This isolates linking under oracle inputs; it is not end-to-end performance. Next, compare extractive candidates and reference paraphrases with calibrated semantic matching before deciding whether to expand or rank the span pool.
+
+## Semantic detail review queue
+
+Run `python -m speechprefix.idea_layer.annotation_detail_review --reference-run PATH --output NEW.json` with the local parser. It ranks literal spans by lexical overlap inside reference evidence windows and exports both syntax-only and sentence-inclusive lists for review. Scores are retrieval cues, not semantic verdicts. On the 67 drafts, 242/263 points had a syntax candidate overlapping their evidence, versus 263/263 with sentences included. Spot checks found cases where full sentences preserve the assertion that a bare noun phrase loses, and cases where neither list recovers the full detail. Presence in the queue is not recall of equivalent details.
