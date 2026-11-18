@@ -105,3 +105,5 @@ Expanded clause and noun-chunk proposals raised the proxy ceiling from 115 to 14
 Previous-question noun chunks (`--questions`) added 63 proposals without a new proxy hit. Sparse top-one fell from 87 to 86 and top-two stayed at 109. Leave this opt-in; resolving an explicit link from the response to the question is preferable to importing nouns indiscriminately.
 
 The stricter `--resolved-questions` ablation admits only short replies to single-subject polar questions. It added no candidates on the frozen set and reproduced the expanded baseline (140 pool hits, 87 sparse top-one, 109 diverse top-two). It is not evidence against broader coreference resolution; this trigger did not exercise the failures we need to fix.
+
+The guarded `--antecedents` ablation adds a same-turn two-sentence hypothesis only when a demonstrative subject follows an explicit event. It added five proposals, no pool hits, and moved sparse top-one from 87 to 88. Top-two stayed at 109. This is not demonstrated semantic improvement or resolved coreference.

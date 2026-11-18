@@ -57,6 +57,18 @@ def question_subjects(question, parser):
                               if chunk.root.pos_ in {'NOUN', 'PROPN'} and words(chunk.text)))[:6]
 
 
+def local_antecedent(sentence, previous):
+    """Propose prior event context only for a demonstrative subject."""
+    if previous is None or not any(t.lower_ in {'this', 'that'} and t.dep_ == 'nsubj'
+                                   and t.pos_ == 'PRON' for t in sentence.root.children):
+        return None
+    if (previous.root.pos_ not in {'VERB', 'AUX'} or len(previous) + len(sentence) > 60
+            or not any(t.pos_ in {'NOUN', 'PROPN'} for t in previous)):
+        return None
+    text = sentence.doc.text[previous.start_char:sentence.end_char].strip()
+    return text if has_spoken_evidence(previous.text) else None
+
+
 def lexical(a, b):
     a, b = set(words(a)), set(words(b))
     return 2 * len(a & b) / max(1, len(a) + len(b))
@@ -87,7 +99,7 @@ def embeddings(checkpoint, pairs):
     return vectors
 
 
-def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, questions=False, resolved_questions=False):
+def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, questions=False, resolved_questions=False, antecedents=False):
     from sklearn.feature_extraction import DictVectorizer
     from sklearn.linear_model import Ridge
     from sklearn.model_selection import GroupKFold
@@ -128,8 +140,12 @@ def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, ques
                             window_targets = {i: labels[i] for i, t, q in grounded if t == turn['turn_id']
                                               and (q in combined or combined in q)}
                             candidates.append(('window', combined, window_targets))
+                    if antecedents and not windows and (context_span := local_antecedent(sent, previous)):
+                        context_targets = {i: labels[i] for i, t, q in grounded if t == turn['turn_id']
+                                           and (q in context_span or context_span in q)}
+                        candidates.append(('antecedent', context_span, context_targets))
                     for kind, label, candidate_targets in candidates:
-                        evidence_start = previous.start_char if kind == 'window' else sent.start_char
+                        evidence_start = previous.start_char if kind in {'window', 'antecedent'} else sent.start_char
                         rows.append(dict(key=key, evidence_start=evidence_start, evidence_end=sent.end_char,
                                          event=packet['event_id'], kind=kind, label=label,
                                          quote=quote, context=f'{quote}\nPrevious turn: {prior[-500:]}',
@@ -173,7 +189,7 @@ def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, ques
             start = time.perf_counter()
             predictions[name] = model.predict(b)
             rank_seconds[name] += time.perf_counter() - start
-        predictions['syntax_first'] = [dict(relation=3, frame=2, noun=1, passage=0, clause=-1, chunk=-2, window=-3, question_subject=-4, resolved_question=4)[rows[i]['kind']] for i in test]
+        predictions['syntax_first'] = [dict(relation=3, frame=2, noun=1, passage=0, clause=-1, chunk=-2, window=-3, question_subject=-4, resolved_question=4, antecedent=-3)[rows[i]['kind']] for i in test]
         for method, scores in predictions.items():
             ordered = sorted(zip(test, scores), key=lambda x: (rows[x[0]]['key'], -x[1], x[0]))
             groups = [[i for i, _ in group] for _, group in groupby(ordered, key=lambda x: rows[x[0]]['key'])]
@@ -193,7 +209,7 @@ def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, ques
                 sparse_gap=dict(no_pool_proxy_hit=len(evidence_keys - pool_hits),
                                 pool_hit_not_selected=len(pool_hits - sparse_hits),
                                 selected_proxy_hit=len(sparse_hits)),
-                expanded=expand, windows=windows, questions=questions, resolved_questions=resolved_questions, encoder_seconds=encoder_seconds, ranking_predict_seconds=dict(rank_seconds),
+                expanded=expand, windows=windows, questions=questions, resolved_questions=resolved_questions, antecedents=antecedents, encoder_seconds=encoder_seconds, ranking_predict_seconds=dict(rank_seconds),
                 idea_diagnostics=[dict(view_id=view, reference_id=idea,
                                        proxy_hits=[name for name in totals if (view, idea) in covered.get(name, ())])
                                   for view, idea in sorted(evidence_keys)],
@@ -211,10 +227,13 @@ def main():
     cli.add_argument('--windows', action='store_true')
     cli.add_argument('--questions', action='store_true')
     cli.add_argument('--resolved-questions', action='store_true')
+    cli.add_argument('--antecedents', action='store_true')
     args = cli.parse_args()
+    if args.antecedents and args.windows:
+        cli.error('compare --antecedents and --windows in separate runs')
     import spacy
     report = evaluate(args.reference_run, spacy.load('en_core_web_sm', disable=['ner']), args.checkpoint, expand=args.expand, windows=args.windows, questions=args.questions,
-                      resolved_questions=args.resolved_questions)
+                      resolved_questions=args.resolved_questions, antecedents=args.antecedents)
     write_json(args.output, report)
     print(json.dumps({k: v for k, v in report.items() if k not in {'selections', 'idea_diagnostics'}}, indent=2))
 
