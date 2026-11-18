@@ -40,16 +40,28 @@ def cue_stance(span):
 
 
 def annotate(packet, *, similarity=lexical_similarity, threshold=.45, engine=VERSION,
-             labeler=None, stance_classifier=cue_stance):
+             labeler=None, stance_classifier=cue_stance, context_labeler=None):
     row = dict(artifact_type='transcript-annotation', schema_version=1, coverage='full_pass',
                event_id=packet['event_id'], view_id=packet['view_id'], generator={'engine': engine},
                annotation_pass='local_engine_candidate', **{k: [] for k in (*LAYERS, *EDGES, 'opinion_targets')})
     turns = {t['turn_id']: t['text'] for t in packet['turns'] if t['role'] == 'target' and has_spoken_evidence(t['text'])}
-    spans = [(turn, match[0].strip()) for turn, text in turns.items()
-             for match in re.finditer(r'[^.!?\n]+[.!?]*', text) if has_spoken_evidence(match[0]) and len(words(match[0])) >= 2]
+    prior_turn = {current['turn_id']: previous for previous, current in zip(packet['turns'], packet['turns'][1:])}
+    spans, contextual_labels = [], []
+    for turn, text in turns.items():
+        for match in re.finditer(r'[^.!?\n]+[.!?]*', text):
+            span = match[0].strip()
+            if not has_spoken_evidence(span):
+                continue
+            contextual = context_labeler(span, prior_turn.get(turn)) if context_labeler else None
+            if contextual or len(words(span)) >= 2:
+                spans.append((turn, span))
+                contextual_labels.append(contextual)
     frequency = Counter(w for _, span in spans for w in set(words(span)))
     labels = []
-    for _, span in spans:
+    for (_, span), contextual in zip(spans, contextual_labels):
+        if contextual:
+            labels.append(contextual)
+            continue
         tokens = words(span)
         names = re.findall(r'\b(?:[A-Z][a-z]+ ){1,3}[A-Z][a-z]+\b', span)
         pairs = list(zip(tokens, tokens[1:]))

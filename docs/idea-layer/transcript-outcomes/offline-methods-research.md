@@ -93,3 +93,5 @@ Standalone bracket-only stage directions are now excluded by the classical extra
 ## Dependency-based stance experiment
 
 The offline `annotation_stance_eval` CLI compares cue-only and dependency-based speech acts on identical spans. The dependency variant adds imperative and first-person obligation detection. On the same 67 drafts it recovered 96/356 stance-specific citations at character IoU ≥ 0.5, versus 85/356 (49 vs 43 exact). It emitted 198 vs 174 distinct stance citations: improved recall does not demonstrate improved precision or target linking. The production default remains unchanged.
+
+The opt-in `parsed_annotation --context` variant uses a single explicit subject in an immediately preceding question to interpret short answers; only target speech is cited. On the 67 drafts it aligned 1/282 under the conservative scorer (376 candidates). This experiment does not establish a semantic gain.

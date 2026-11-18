@@ -87,12 +87,17 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--frames', action='store_true')
     parser.add_argument('--grounded', action='store_true')
+    parser.add_argument('--context', action='store_true')
     args = parser.parse_args()
     import spacy
     nlp = spacy.load('en_core_web_sm', disable=['ner'])
     version = 'classical-grounded-labels-v1' if args.grounded else ('classical-event-frames-v1' if args.frames else VERSION)
     engine = partial(annotate, engine=version, labeler=partial(label_span, parser=nlp, frames=args.frames or args.grounded,
                                                               grounded=args.grounded))
+    if args.context:
+        from .context_subject import select_subject
+        version = 'classical-context-subject-v1'
+        engine = partial(annotate, engine=version, context_labeler=partial(select_subject, parser=nlp))
     print(json.dumps(evaluate(args.reference_run, args.output, annotator=engine, engine=version), indent=2))
 
 
