@@ -63,3 +63,7 @@ The evaluator reports one-to-one `subject_alignment` separately from exact graph
 ## Actor–action–object labels
 
 The parsed evaluator has an opt-in `--frames` ablation. Selected active verbs with an explicit noun-phrase subject and object yield a nominal occurrence label; the quoted source and speaker stance are unchanged. On the frozen 67 drafts it changed only one idea label and left conservative alignment at 2/282. It is not a general event extractor or rollout candidate.
+
+## Reviewed subject-pair diagnostic
+
+An assistant inspected the top two queued pairs for a seeded sample of 16 unmatched ideas (seed 55). Five conveyed the same subject, two were broader/narrower, six were different or lost the subject, and three had an unresolved subject or a questionable layer assignment. Labels must convey the subject; citing the same sentence does not rescue a generic label. This is a small, non-adjudicated shortlist audit of the classical detail-integration run, not an overall semantic score or an evaluation of the later event-frame variant. The frozen drafts remain unchanged.
