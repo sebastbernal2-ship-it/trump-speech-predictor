@@ -107,13 +107,16 @@ def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, ques
     from scipy.sparse import hstack
 
     raw = (root / 'manifest.json').read_bytes()
-    rows, evidence_keys = [], set()
+    rows, evidence_keys, review = [], set(), {}
     for view, packet, _, ref in load_references(root, raw):
         labels = {i['idea_id']: i['occurrence'] for i in ref['ideas']}
         mentions = {m['mention_id']: m['evidence'] for m in ref['mentions']}
         grounded = [(e['idea_id'], c['turn_id'], c['exact_quote']) for e in ref['idea_mentions']
                     for c in mentions[e['mention_id']]]
         evidence_keys.update((view, i) for i in labels)
+        for ident, label in labels.items():
+            review[view, ident] = dict(label=label, evidence=[dict(turn_id=t, quote=q)
+                                                              for i, t, q in grounded if i == ident])
         prior = ''
         prior_role = None
         for turn in packet['turns']:
@@ -148,7 +151,8 @@ def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, ques
                         evidence_start = previous.start_char if kind in {'window', 'antecedent'} else sent.start_char
                         rows.append(dict(key=key, evidence_start=evidence_start, evidence_end=sent.end_char,
                                          event=packet['event_id'], kind=kind, label=label,
-                                         quote=quote, context=f'{quote}\nPrevious turn: {prior[-500:]}',
+                                         quote=quote, evidence=turn['text'][evidence_start:sent.end_char],
+                                         context=f'{quote}\nPrevious turn: {prior[-500:]}',
                                          proxy={i: lexical(label, target) for i, target in candidate_targets.items()}))
                     previous = sent
             prior = turn['text']
@@ -203,6 +207,27 @@ def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, ques
                     if second is not None:
                         budgeted.append(second)
                 record(f'{method}_diverse_top2', budgeted)
+    # Build a review queue after predictions. Include zero-overlap paraphrases
+    # when they occur near a reference anchor; never count them automatically.
+    by_turn = {}
+    for index, row in enumerate(rows):
+        by_turn.setdefault(row['key'][:2], []).append(index)
+    selected_keys = {(s['view_id'], s['turn_id'], s['start'], s['end'], s['label'])
+                     for s in selected if s['method'] == 'sparse'}
+    for (view, ident), item in review.items():
+        indices = {i for turn in {e['turn_id'] for e in item['evidence']}
+                   for i in by_turn.get((view, turn), [])}
+        ordered = sorted(indices, key=lambda i: (ident not in rows[i]['proxy'],
+                                                  -rows[i]['proxy'].get(ident, 0), i))
+        item['same_turn_proposals'] = len(ordered)
+        item['candidates'] = []
+        for i in ordered[:8]:
+            row = rows[i]
+            turn = row['key'][1]
+            start, end = row['evidence_start'], row['evidence_end']
+            item['candidates'].append(dict(turn_id=turn, start=start, end=end, label=row['label'],
+                                           kind=row['kind'], evidence=row['evidence'],
+                                           sparse_selected=(view, turn, start, end, row['label']) in selected_keys))
     pool_hits = covered.get('pool', set())
     sparse_hits = covered.get('sparse', set())
     return dict(reference_manifest_sha256=digest(raw), folds=5, reference_ideas=len(evidence_keys),
@@ -211,7 +236,8 @@ def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, ques
                                 selected_proxy_hit=len(sparse_hits)),
                 expanded=expand, windows=windows, questions=questions, resolved_questions=resolved_questions, antecedents=antecedents, encoder_seconds=encoder_seconds, ranking_predict_seconds=dict(rank_seconds),
                 idea_diagnostics=[dict(view_id=view, reference_id=idea,
-                                       proxy_hits=[name for name in totals if (view, idea) in covered.get(name, ())])
+                                       proxy_hits=[name for name in totals if (view, idea) in covered.get(name, ())],
+                                       **review[view, idea])
                                   for view, idea in sorted(evidence_keys)],
                 checkpoint=checkpoint.name if checkpoint else None,
                 methods={method: dict(emitted=count, reference_ideas_with_lexical_proxy_hit=len(covered.get(method, ())))
