@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import re
 
+from .idea_agreement import align_ideas
 from .annotation_batch import digest, write_json
 from .local_annotation_engine import VERSION, annotate
 from .transcript_annotations import EDGES, LAYERS, validate_transcript_annotation
@@ -62,6 +63,7 @@ def evaluate(reference_run: Path, output: Path, *,
     output.mkdir(parents=True, exist_ok=False)
     results = []
     total = {}
+    subject_totals = Counter()
     for view, checksum in sorted(refs.items()):
         if not re.fullmatch(r'[0-9a-f]{64}', view):
             raise ValueError('invalid view ID')
@@ -82,15 +84,19 @@ def evaluate(reference_run: Path, output: Path, *,
             raise ValueError('reference identity mismatch')
         validate_transcript_annotation(ref, targets)
         score = compare(candidate, ref)
+        alignment = align_ideas(candidate['ideas'], ref['ideas'])
+        subject_totals.update(matched=len(alignment['matches']), candidate=len(candidate['ideas']),
+                              reference=len(ref['ideas']))
         write_json(output / name, candidate)
         results.append({'view_id': view, 'abstained': not candidate['ideas'],
                         'exact_agreement': all(s['candidate'] == s['matched'] == s['reference'] for s in score.values()),
-                        'layers': score})
+                        'layers': score, 'subject_alignment': alignment})
         for layer, counts in score.items():
             total.setdefault(layer, Counter()).update(counts)
     summary = {'engine': engine, 'reference_manifest_sha256': digest(manifest_bytes),
                'reference_views': len(results), 'exact_agreement': sum(r['exact_agreement'] for r in results),
                'abstained': sum(r['abstained'] for r in results), 'layers': total}
+    summary['subject_alignment'] = dict(subject_totals)
     write_json(output / 'evaluation.json', {**summary, 'records': results})
     return summary
 
