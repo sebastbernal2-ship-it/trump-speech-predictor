@@ -15,6 +15,8 @@ def select_subject(span, previous, parser):
             doc = parser(question)
             candidates = [c for c in doc.noun_chunks if c.root.pos_ in {'NOUN', 'PROPN'}
                           and c.root.dep_ in {'dobj', 'obj', 'pobj', 'nsubjpass'}]
-            if len(candidates) == 1 and not any(t.dep_ in {'conj', 'neg'} for t in doc):
+            first = next((t for t in doc if not (t.is_space or t.is_punct)), None)
+            polar = first is not None and first.pos_ == 'AUX'
+            if polar and len(candidates) == 1 and not any(t.dep_ in {'conj', 'neg'} for t in doc):
                 return candidates[0].text
     return label_span(span, parser, frames=True, grounded=True)
