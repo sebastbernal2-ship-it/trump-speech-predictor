@@ -59,3 +59,7 @@ The evaluator reports one-to-one `subject_alignment` separately from exact graph
 ## Parsed idea labels
 
 `python -m speechprefix.idea_layer.parsed_annotation --reference-run PATH --output NEW_DIR` replaces discourse-marker bigrams with ranked noun chunks when available. On the 67 drafts it aligned 2/282 reference ideas under the conservative alias scorer (359 candidates), versus 1/282 (373 candidates) for the classical baseline. No broad semantic improvement is established. Bare noun phrases still miss event relations, and unparseable spans retain the old fallback.
+
+## Actor–action–object labels
+
+The parsed evaluator has an opt-in `--frames` ablation. Selected active verbs with an explicit noun-phrase subject and object yield a nominal occurrence label; the quoted source and speaker stance are unchanged. On the frozen 67 drafts it changed only one idea label and left conservative alignment at 2/282. It is not a general event extractor or rollout candidate.
