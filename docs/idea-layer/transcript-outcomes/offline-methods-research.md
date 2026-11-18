@@ -107,3 +107,5 @@ Previous-question noun chunks (`--questions`) added 63 proposals without a new p
 The stricter `--resolved-questions` ablation admits only short replies to single-subject polar questions. It added no candidates on the frozen set and reproduced the expanded baseline (140 pool hits, 87 sparse top-one, 109 diverse top-two). It is not evidence against broader coreference resolution; this trigger did not exercise the failures we need to fix.
 
 The guarded `--antecedents` ablation adds a same-turn two-sentence hypothesis only when a demonstrative subject follows an explicit event. It added five proposals, no pool hits, and moved sparse top-one from 87 to 88. Top-two stayed at 109. This is not demonstrated semantic improvement or resolved coreference.
+
+The rank experiment now exports per-transcript inventories with merged citations for conservative subject aliases. On the 67 drafts, sparse top-one produced 413 inventory entries from 428 selections; syntax-first produced 411. This is exact/known-alias deduplication, not general event coreference, and does not establish semantic precision or recall.

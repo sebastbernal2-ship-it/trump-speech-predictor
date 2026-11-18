@@ -10,6 +10,7 @@ from .annotation_batch import digest, write_json
 from .annotation_candidate_eval import load_references
 from .classical_annotation import words
 from .context_subject import resolve_question_subject
+from .idea_agreement import subject_signature
 from .parsed_annotation import label_span
 from .spoken_evidence import has_spoken_evidence
 
@@ -99,6 +100,16 @@ def embeddings(checkpoint, pairs):
     return vectors
 
 
+def transcript_groups(rows, chosen):
+    """Group final selections by view and conservative occurrence signature."""
+    groups = {}
+    for index in chosen:
+        row = rows[index]
+        signature = subject_signature(row['label']) or (row['label'],)
+        groups.setdefault((row['key'][0], signature), []).append(index)
+    return list(groups.values())
+
+
 def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, questions=False, resolved_questions=False, antecedents=False):
     from sklearn.feature_extraction import DictVectorizer
     from sklearn.linear_model import Ridge
@@ -166,6 +177,7 @@ def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, ques
     rank_seconds = Counter()
     covered = {}
     selected = []
+    inventories = {}
 
     def record(method, indices):
         for index in indices:
@@ -197,7 +209,16 @@ def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, ques
         for method, scores in predictions.items():
             ordered = sorted(zip(test, scores), key=lambda x: (rows[x[0]]['key'], -x[1], x[0]))
             groups = [[i for i, _ in group] for _, group in groupby(ordered, key=lambda x: rows[x[0]]['key'])]
-            record(method, [group[0] for group in groups])
+            first_choices = [group[0] for group in groups]
+            record(method, first_choices)
+            for members in transcript_groups(rows, first_choices):
+                best = rows[members[0]]
+                view = best['key'][0]
+                evidence = sorted({(rows[i]['key'][1], rows[i]['evidence_start'],
+                                    rows[i]['evidence_end'], rows[i]['evidence']) for i in members})
+                inventories.setdefault(method, {}).setdefault(view, []).append(dict(
+                    label=best['label'], evidence=[dict(turn_id=t, start=a, end=b, quote=q)
+                                                   for t, a, b, q in evidence]))
             if expand:
                 budgeted = []
                 for group in groups:
@@ -241,7 +262,9 @@ def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, ques
                                   for view, idea in sorted(evidence_keys)],
                 checkpoint=checkpoint.name if checkpoint else None,
                 methods={method: dict(emitted=count, reference_ideas_with_lexical_proxy_hit=len(covered.get(method, ())))
-                         for method, count in totals.items()}, selections=selected)
+                         for method, count in totals.items()},
+                inventory_sizes={method: sum(map(len, views.values())) for method, views in inventories.items()},
+                inventories=inventories, selections=selected)
 
 
 def main():
@@ -261,7 +284,7 @@ def main():
     report = evaluate(args.reference_run, spacy.load('en_core_web_sm', disable=['ner']), args.checkpoint, expand=args.expand, windows=args.windows, questions=args.questions,
                       resolved_questions=args.resolved_questions, antecedents=args.antecedents)
     write_json(args.output, report)
-    print(json.dumps({k: v for k, v in report.items() if k not in {'selections', 'idea_diagnostics'}}, indent=2))
+    print(json.dumps({k: v for k, v in report.items() if k not in {'selections', 'idea_diagnostics', 'inventories'}}, indent=2))
 
 
 if __name__ == '__main__':

@@ -1,6 +1,6 @@
 import pytest
 
-from speechprefix.idea_layer.subject_rank_experiment import local_antecedent, proposals, question_subjects
+from speechprefix.idea_layer.subject_rank_experiment import local_antecedent, proposals, question_subjects, transcript_groups
 
 
 def test_proposals_keep_explicit_result_with_action():
@@ -18,3 +18,11 @@ def test_proposals_keep_explicit_result_with_action():
     assert local_antecedent(second, None) is None
     first, second = parser('The county repaired the bridge. Commuters returned.').sents
     assert local_antecedent(second, first) is None
+
+
+def test_transcript_inventory_keeps_views_and_occurrences_separate():
+    rows = [dict(key=(view, "t", i), label=label) for i, (view, label) in enumerate([
+        ("v", "Ukrainian war vs Russia"), ("v", "Russian-Ukrainian War"),
+        ("v", "Battle of Kyiv"), ("other", "Russian-Ukrainian War"),
+    ])]
+    assert transcript_groups(rows, range(4)) == [[0, 1], [2], [3]]
