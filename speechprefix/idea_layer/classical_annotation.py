@@ -48,11 +48,12 @@ def annotate(packet, *, similarity=lexical_similarity, threshold=.45, engine=VER
     prior_turn = {current['turn_id']: previous for previous, current in zip(packet['turns'], packet['turns'][1:])}
     spans, contextual_labels = [], []
     for turn, text in turns.items():
-        for match in re.finditer(r'[^.!?\n]+[.!?]*', text):
+        for index, match in enumerate(re.finditer(r'[^.!?\n]+[.!?]*', text)):
             span = match[0].strip()
             if not has_spoken_evidence(span):
                 continue
-            contextual = context_labeler(span, prior_turn.get(turn)) if context_labeler else None
+            previous = prior_turn.get(turn) if index == 0 else None
+            contextual = context_labeler(span, previous) if context_labeler else None
             if contextual or len(words(span)) >= 2:
                 spans.append((turn, span))
                 contextual_labels.append(contextual)
