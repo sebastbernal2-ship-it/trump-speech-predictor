@@ -2,6 +2,8 @@
 from dataclasses import dataclass
 import re
 
+from .spoken_evidence import has_spoken_evidence
+
 
 @dataclass(frozen=True)
 class Candidate:
@@ -24,6 +26,8 @@ def propose(packet, parser=None):
         if turn['role'] != 'target':
             continue
         text = turn['text']
+        if not has_spoken_evidence(text):
+            continue
         ident = turn['turn_id']
 
         def add(start, end, kind, parent=None):
@@ -31,7 +35,7 @@ def propose(packet, parser=None):
                 start += 1
             while end > start and text[end - 1].isspace():
                 end -= 1
-            if end > start:
+            if has_spoken_evidence(text[start:end]):
                 result.add(Candidate(ident, start, end, kind, *(parent or (None, None))))
 
         for match in re.finditer(r'[^.!?\n]+[.!?]*', text):

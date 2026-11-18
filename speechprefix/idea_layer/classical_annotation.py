@@ -2,6 +2,7 @@
 from collections import Counter
 import re
 
+from .spoken_evidence import has_spoken_evidence
 from .transcript_annotations import EDGES, LAYERS, validate_transcript_annotation
 
 VERSION = 'classical-extractive-v1'
@@ -36,9 +37,9 @@ def annotate(packet, *, similarity=lexical_similarity, threshold=.45, engine=VER
     row = dict(artifact_type='transcript-annotation', schema_version=1, coverage='full_pass',
                event_id=packet['event_id'], view_id=packet['view_id'], generator={'engine': engine},
                annotation_pass='local_engine_candidate', **{k: [] for k in (*LAYERS, *EDGES, 'opinion_targets')})
-    turns = {t['turn_id']: t['text'] for t in packet['turns'] if t['role'] == 'target'}
+    turns = {t['turn_id']: t['text'] for t in packet['turns'] if t['role'] == 'target' and has_spoken_evidence(t['text'])}
     spans = [(turn, match[0].strip()) for turn, text in turns.items()
-             for match in re.finditer(r'[^.!?\n]+[.!?]*', text) if len(words(match[0])) >= 2]
+             for match in re.finditer(r'[^.!?\n]+[.!?]*', text) if has_spoken_evidence(match[0]) and len(words(match[0])) >= 2]
     frequency = Counter(w for _, span in spans for w in set(words(span)))
     labels = []
     for _, span in spans:
