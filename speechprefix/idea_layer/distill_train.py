@@ -57,7 +57,7 @@ def main() -> None:
     for r in test:
         ids = tok(PROMPT.format(input=r['input']), return_tensors='pt').to('cuda')
         with torch.no_grad():
-            out = model.generate(**ids, max_new_tokens=2048, do_sample=False, repetition_penalty=1.05)
+            out = model.generate(**ids, max_new_tokens=4096, do_sample=False, repetition_penalty=1.05)
         text = tok.decode(out[0][ids['input_ids'].shape[1]:], skip_special_tokens=True)
         (a.output / f"{r['view_id']}.json").write_text(json.dumps({'view_id': r['view_id'], 'raw': text}))
     print('done', len(test))
