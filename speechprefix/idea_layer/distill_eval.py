@@ -35,9 +35,20 @@ def main() -> None:
     p.add_argument('--runs', type=Path, nargs='+', required=True, help='fold output directories')
     p.add_argument('--embedder', required=True)
     p.add_argument('--thresholds', type=float, nargs='+', default=[0.5, 0.6, 0.7])
+    p.add_argument('--layer-thresholds', default=None,
+                   help='JSON object or file mapping layer -> threshold; overrides --thresholds for that layer')
     a = p.parse_args()
+    per_layer = {layer: list(a.thresholds) for layer in TEXT}
+    if a.layer_thresholds:
+        src = Path(a.layer_thresholds)
+        spec = json.loads(src.read_text() if src.exists() else a.layer_thresholds)
+        unknown = set(spec) - set(TEXT)
+        if unknown:
+            raise SystemExit(f'unknown layers in --layer-thresholds: {sorted(unknown)}')
+        for layer, t in spec.items():
+            per_layer[layer] = [float(t)]
     rows = {r['view_id']: r for r in map(json.loads, a.pairs.read_text().splitlines())}
-    totals = {layer: {t: [0, 0, 0, 0] for t in a.thresholds} for layer in TEXT}  # ref_hit, ref_n, gen_hit, gen_n
+    totals = {layer: {t: [0, 0, 0, 0] for t in per_layer[layer]} for layer in TEXT}  # ref_hit, ref_n, gen_hit, gen_n
     quotes = [0, 0]; parsed = [0, 0]
     for run in a.runs:
         for path in sorted(run.glob('*.json')):
@@ -56,15 +67,15 @@ def main() -> None:
                 if not r:
                     continue
                 if not g:
-                    for t in a.thresholds:
+                    for t in per_layer[layer]:
                         totals[layer][t][1] += len(r)
                     continue
                 e = embed(a.embedder, r + g); sim = e[:len(r)] @ e[len(r):].T
-                for t in a.thresholds:
+                for t in per_layer[layer]:
                     c = totals[layer][t]
                     c[0] += int((sim.max(1).values >= t).sum()); c[1] += len(r)
                     c[2] += int((sim.max(0).values >= t).sum()); c[3] += len(g)
-    out = {'parsed_json': parsed, 'quotes_exact': quotes, 'layers': {}}
+    out = {'parsed_json': parsed, 'quotes_exact': quotes, 'layer_thresholds': per_layer, 'layers': {}}
     for layer, by in totals.items():
         out['layers'][layer] = {str(t): {'recall': round(c[0] / c[1], 3) if c[1] else None,
                                         'precision': round(c[2] / c[3], 3) if c[3] else None,
