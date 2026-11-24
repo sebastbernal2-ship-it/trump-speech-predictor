@@ -49,3 +49,7 @@ Use fresh output directories. Manual assistant drafts may also be submitted as `
 The current structured sources cover 12,906 source rows across 5,490 distinct source event IDs. Exact duplicate views share one packet, while different transcript views remain separate. The 4,967 applicable views have target speaker text; 1,500 source rows were skipped for no target text. The flattened `trump-long-speeches.jsonl` is a derived export without turn evidence, not a seventh structured source. The first review run has one assistant draft covering three duplicate source rows; 4,966 views are pending. These are source IDs, not a cross-provider adjudication of real-world event identity.
 
 For no-provider inference and comparison against the frozen development drafts, see [Local annotation engine](local-annotation-engine.md).
+
+## Distilled annotator results
+
+See [Distilled annotator](distilled-annotator.md) for the frozen-draft evaluation, pipeline summary, and limitations.
