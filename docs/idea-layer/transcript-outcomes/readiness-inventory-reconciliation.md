@@ -1,6 +1,6 @@
 # Transcript inventory and readiness reconciliation
 
-Status: local reconciliation, 2026-11-17. Phase 1 is **not demonstrated ready**. The per-record [local crosswalk](../../../.local-reconciliation/transcript-crosswalk.csv) lists every record in the four inventoried transcript-bearing views, with source line, ID, record and text hashes where applicable, class and segment links, each layer's observed status, and links to the assessed outputs. [Its generator](../../../.local-reconciliation/build.py) reads the specified local data and candidate cache without modifying them. These local metadata artifacts are not a released dataset and should not be staged or distributed without checking source terms.
+Status: local reconciliation, 2026-11-17. Phase 1 is **not demonstrated ready**. The per-record local crosswalk at `../../../.local-reconciliation/transcript-crosswalk.csv` lists every record in the four inventoried transcript-bearing views, with source line, ID, record and text hashes where applicable, class and segment links, each layer's observed status, and links to the assessed outputs. Its generator at `../../../.local-reconciliation/build.py` reads the specified local data and candidate cache without modifying them. These local metadata artifacts are not a released dataset and should not be staged or distributed without checking source terms.
 
 ## Accounting and method
 
