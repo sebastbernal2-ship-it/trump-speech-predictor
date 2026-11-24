@@ -296,6 +296,86 @@ def finetune_predict(model_dir: str, train: list[dict], test: list[dict], epochs
     return np.concatenate(out)
 
 
+# ---------- (d) zero-shot NLI ----------
+
+NLI_MODEL = "cross-encoder/nli-deberta-v3-small"
+
+
+def nli_entailment_probs(model_name: str, premises: list[str], hypotheses: list[str],
+                         batch: int = 32) -> np.ndarray:
+    """P(entailment | premise, hypothesis) from an off-the-shelf NLI cross-encoder.
+
+    No parameters are trained on the calibration labels, so the only fitted
+    quantity in CV is the decision threshold (chosen on train folds).
+    """
+    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+    tok = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSequenceClassification.from_pretrained(model_name).eval()
+    ent_idx = [int(k) for k, v in model.config.id2label.items() if v.lower() == "entailment"]
+    if len(ent_idx) != 1:
+        raise SystemExit(f"no unique entailment label in {model_name}: {model.config.id2label}")
+    out = []
+    with torch.no_grad():
+        for i in range(0, len(premises), batch):
+            enc = tok(premises[i : i + batch], hypotheses[i : i + batch], padding=True,
+                      truncation=True, max_length=256, return_tensors="pt")
+            probs = torch.softmax(model(**enc).logits, dim=-1)
+            out.append(probs[:, ent_idx[0]].numpy())
+    return np.concatenate(out)
+
+
+def nli_method(pairs, folds, y_by_target, layers, model_name: str) -> dict:
+    refs = [p["reference"] for p in pairs]
+    gens = [p["generated"] for p in pairs]
+    # reference -> generated: reference is the premise, generated the hypothesis
+    fwd = nli_entailment_probs(model_name, refs, gens)
+    # generated -> reference
+    rev = nli_entailment_probs(model_name, gens, refs)
+    variants = {
+        "nli_min_both_directions": np.minimum(fwd, rev),
+        "nli_mean_both_directions": (fwd + rev) / 2.0,
+    }
+    out = {}
+    for name, scores in variants.items():
+        # same threshold-on-score CV as the cosine baseline (threshold fit on train folds)
+        out[name] = out_of_fold(
+            lambda train, test, y, s=scores: (s[test], best_threshold(s[train], y[train])),
+            folds, y_by_target, layers, len(pairs),
+        )
+    return out
+
+
+def run_nli(args, pairs, folds, y_by_target, layers, cos) -> None:
+    t0 = time.time()
+    methods = {"cosine_recomputed": cosine_method(cos, folds, y_by_target, layers)}
+    methods.update(nli_method(pairs, folds, y_by_target, layers, args.nli_model))
+    stored = json.loads((args.base / "matcher-v1.json").read_text())["methods"]
+    results = {
+        "task": "5-fold grouped-by-view_id zero-shot NLI matcher vs cosine (distill-v1)",
+        "n_pairs": len(pairs),
+        "n_views": len(set(p["view_id"] for p in pairs)),
+        "label_counts": {l: sum(p["label"] == l for p in pairs) for l in LABELS4},
+        "nli_model": args.nli_model,
+        "nli_directions": {"fwd": "premise=reference, hypothesis=generated",
+                           "rev": "premise=generated, hypothesis=reference"},
+        "scores": "P(entailment); min or mean over both directions",
+        "threshold": "maximises F1 on train folds; applied to held-out fold",
+        "targets": {"strict": "label == same",
+                    "multi": "label in {same, broader, narrower}"},
+        "methods": methods,
+        "stored_baseline_matcher_v1": {"a_minilm_cosine": stored["a_minilm_cosine"]},
+        "device": "cpu",
+        "runtime_seconds": None,
+    }
+    results["runtime_seconds"] = round(time.time() - t0, 1)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps(results, indent=2) + "\n")
+    summary = {m: {t: (r[t]["overall"]["f1"], r[t]["overall"]["accuracy"]) for t in r}
+               for m, r in methods.items()}
+    print(json.dumps(summary, indent=1))
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", type=Path, default=DEFAULT_B)
@@ -305,10 +385,12 @@ def main() -> None:
     ap.add_argument("--lr", type=float, default=2e-5)
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--nli", action="store_true",
+                    help="run only the zero-shot NLI matcher (no fine-tuning)")
+    ap.add_argument("--nli-model", default=NLI_MODEL)
     args = ap.parse_args()
 
     torch.set_num_threads(max(1, os.cpu_count() or 1))
-    model_dir = resolve_model(args.encoder)
 
     pairs = load_pairs(args.base)
     view_ids = [p["view_id"] for p in pairs]
@@ -321,6 +403,14 @@ def main() -> None:
     y_multi = np.array([p["label"] in ("same", "broader", "narrower") for p in pairs])
     y_by_target = {"strict": y_strict, "multi": y_multi}
     cos = np.array([p["cosine"] for p in pairs], dtype=float)
+
+    if args.nli:
+        if args.out == DEFAULT_B / "matcher-v1.json":
+            args.out = DEFAULT_B / "matcher-nli-v1.json"
+        run_nli(args, pairs, folds, y_by_target, layers, cos)
+        return
+
+    model_dir = resolve_model(args.encoder)
 
     results: dict = {
         "task": "5-fold grouped-by-view_id matcher comparison (distill-v1)",
