@@ -33,16 +33,36 @@ def lexical_similarity(labels):
     return lambda i, j: len(tokens[i] & tokens[j]) / max(1, len(tokens[i] | tokens[j]))
 
 
-def annotate(packet, *, similarity=lexical_similarity, threshold=.45, engine=VERSION, labeler=None):
+def cue_stance(span):
+    if '?' not in span:
+        return next((name for name, pattern in STANCE if pattern.search(span)), None)
+    return None
+
+
+def annotate(packet, *, similarity=lexical_similarity, threshold=.45, engine=VERSION,
+             labeler=None, stance_classifier=cue_stance, context_labeler=None):
     row = dict(artifact_type='transcript-annotation', schema_version=1, coverage='full_pass',
                event_id=packet['event_id'], view_id=packet['view_id'], generator={'engine': engine},
                annotation_pass='local_engine_candidate', **{k: [] for k in (*LAYERS, *EDGES, 'opinion_targets')})
     turns = {t['turn_id']: t['text'] for t in packet['turns'] if t['role'] == 'target' and has_spoken_evidence(t['text'])}
-    spans = [(turn, match[0].strip()) for turn, text in turns.items()
-             for match in re.finditer(r'[^.!?\n]+[.!?]*', text) if has_spoken_evidence(match[0]) and len(words(match[0])) >= 2]
+    prior_turn = {current['turn_id']: previous for previous, current in zip(packet['turns'], packet['turns'][1:])}
+    spans, contextual_labels = [], []
+    for turn, text in turns.items():
+        for index, match in enumerate(re.finditer(r'[^.!?\n]+[.!?]*', text)):
+            span = match[0].strip()
+            if not has_spoken_evidence(span):
+                continue
+            previous = prior_turn.get(turn) if index == 0 else None
+            contextual = context_labeler(span, previous) if context_labeler else None
+            if contextual or len(words(span)) >= 2:
+                spans.append((turn, span))
+                contextual_labels.append(contextual)
     frequency = Counter(w for _, span in spans for w in set(words(span)))
     labels = []
-    for _, span in spans:
+    for (_, span), contextual in zip(spans, contextual_labels):
+        if contextual:
+            labels.append(contextual)
+            continue
         tokens = words(span)
         names = re.findall(r'\b(?:[A-Z][a-z]+ ){1,3}[A-Z][a-z]+\b', span)
         pairs = list(zip(tokens, tokens[1:]))
@@ -79,7 +99,7 @@ def annotate(packet, *, similarity=lexical_similarity, threshold=.45, engine=VER
             point = node('key_points', detail=detail[1].strip(), uncertainty='Detail cue; review attachment.')
             link('key_point_ideas', point, found)
             link('key_point_mentions', point, mention)
-        if '?' not in span and (stance := next((name for name, pattern in STANCE if pattern.search(span)), None)):
+        if stance := stance_classifier(span):
             opinion = node('opinions', text=span, attribution='speaker', stance=stance,
                            uncertainty='Surface cue; attribution, scope and intent require review.')
             link('opinion_mentions', opinion, mention)

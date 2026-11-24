@@ -1,0 +1,309 @@
+"""Offline ablation of extractive subject pools and sparse/contextual rankers."""
+import argparse
+from collections import Counter
+import json
+from itertools import groupby
+from pathlib import Path
+import time
+
+from .annotation_batch import digest, write_json
+from .annotation_candidate_eval import load_references
+from .classical_annotation import words
+from .context_subject import resolve_question_subject
+from .idea_agreement import subject_signature
+from .parsed_annotation import label_span
+from .spoken_evidence import has_spoken_evidence
+
+
+def proposals(sentence, parser, *, expand=False):
+    text = sentence.text.strip()
+    noun = label_span(text, parser)
+    frame = label_span(text, parser, frames=True, grounded=True)
+    candidates = [(kind, label) for kind, label in [('noun', noun), ('frame', frame)] if label]
+    for token in sentence:
+        if token.dep_ not in {'advcl', 'ccomp', 'xcomp'}:
+            continue
+        markers = {t.lower_ for t in token.children if t.dep_ in {'mark', 'aux'}}
+        if markers & {'so', 'that', 'to', 'because'} and len(sentence) <= 45:
+            candidates.append(('relation', text))
+    if len(sentence) <= 45 and len(words(text)) >= 2:
+        candidates.append(('passage', text))
+    if expand:
+        for chunk in sentence.doc.noun_chunks:
+            if not (sentence.start <= chunk.start < chunk.end <= sentence.end):
+                continue
+            if chunk.root.pos_ in {'NOUN', 'PROPN'} and words(chunk.text):
+                candidates.append(('chunk', chunk.text))
+        for token in sentence:
+            if token.dep_ not in {'advcl', 'ccomp', 'xcomp', 'conj', 'relcl'}:
+                continue
+            members = sorted(t.i for t in token.subtree)
+            if (members and sentence.start <= members[0] <= members[-1] < sentence.end
+                    and len(members) == members[-1] - members[0] + 1 and len(members) <= 32):
+                clause = sentence.doc[members[0]:members[-1] + 1].text
+                if len(words(clause)) >= 2:
+                    candidates.append(('clause', clause))
+    unique = {}
+    for kind, label in candidates:
+        unique.setdefault(label.casefold(), (kind, label))
+    return list(unique.values())
+
+
+def question_subjects(question, parser):
+    """Offer grounded context hypotheses without citing the interviewer as evidence."""
+    if not question.rstrip().endswith('?') or len(question.split()) > 80:
+        return []
+    doc = parser(question)
+    return list(dict.fromkeys(chunk.text for chunk in doc.noun_chunks
+                              if chunk.root.pos_ in {'NOUN', 'PROPN'} and words(chunk.text)))[:6]
+
+
+def local_antecedent(sentence, previous):
+    """Propose prior event context only for a demonstrative subject."""
+    if previous is None or not any(t.lower_ in {'this', 'that'} and t.dep_ == 'nsubj'
+                                   and t.pos_ == 'PRON' for t in sentence.root.children):
+        return None
+    if (previous.root.pos_ not in {'VERB', 'AUX'} or len(previous) + len(sentence) > 60
+            or not any(t.pos_ in {'NOUN', 'PROPN'} for t in previous)):
+        return None
+    text = sentence.doc.text[previous.start_char:sentence.end_char].strip()
+    return text if has_spoken_evidence(previous.text) else None
+
+
+def lexical(a, b):
+    a, b = set(words(a)), set(words(b))
+    return 2 * len(a & b) / max(1, len(a) + len(b))
+
+
+def specificity_features(label, parser):
+    doc = parser(label)
+    return {
+        'nominal_heads': sum(t.pos_ in {'NOUN', 'PROPN'} and not t.is_stop for t in doc),
+        'proper_names': sum(t.pos_ == 'PROPN' for t in doc),
+        'content_verbs': sum(t.pos_ == 'VERB' for t in doc),
+        'clause_arguments': sum(t.dep_ in {'nsubj', 'nsubjpass', 'dobj', 'obj', 'pobj'}
+                                and t.pos_ in {'NOUN', 'PROPN'} for t in doc),
+        'unresolved_arguments': sum(t.pos_ == 'PRON' and t.lower_ not in {'i', 'we', 'you'}
+                                    and t.dep_ in {'nsubj', 'nsubjpass', 'dobj', 'obj', 'pobj'} for t in doc),
+    }
+
+
+def features(kind, label, quote):
+    return {'kind': kind, 'words': len(words(label)), 'coverage': lexical(label, quote),
+            'contains_number': any(c.isdigit() for c in label)}
+
+
+def embeddings(checkpoint, pairs):
+    import torch
+    from transformers import AutoModel, AutoTokenizer
+
+    checkpoint = checkpoint.resolve(strict=True)
+    tokenizer = AutoTokenizer.from_pretrained(checkpoint, local_files_only=True, trust_remote_code=False)
+    model = AutoModel.from_pretrained(checkpoint, local_files_only=True, trust_remote_code=False,
+                                      use_safetensors=True).eval()
+    if model.config.is_decoder or model.config.is_encoder_decoder or model.config.model_type != 'roberta':
+        raise ValueError('expected a local RoBERTa encoder checkpoint')
+    vectors = []
+    with torch.inference_mode():
+        for start in range(0, len(pairs), 16):
+            context, labels = zip(*pairs[start:start + 16])
+            inputs = tokenizer(list(context), list(labels), padding=True, truncation='only_first',
+                               max_length=256, return_tensors='pt')
+            vectors.extend(model(**inputs).last_hidden_state[:, 0].numpy())
+    return vectors
+
+
+def transcript_groups(rows, chosen):
+    """Group final selections by view and conservative occurrence signature."""
+    groups = {}
+    for index in chosen:
+        row = rows[index]
+        signature = subject_signature(row['label']) or (row['label'],)
+        groups.setdefault((row['key'][0], signature), []).append(index)
+    return list(groups.values())
+
+
+def evaluate(root, parser, checkpoint=None, *, expand=False, windows=False, questions=False, resolved_questions=False, antecedents=False):
+    from sklearn.feature_extraction import DictVectorizer
+    from sklearn.linear_model import Ridge
+    from sklearn.model_selection import GroupKFold
+    import numpy as np
+    from scipy.sparse import hstack
+
+    raw = (root / 'manifest.json').read_bytes()
+    rows, evidence_keys, review = [], set(), {}
+    for view, packet, _, ref in load_references(root, raw):
+        labels = {i['idea_id']: i['occurrence'] for i in ref['ideas']}
+        mentions = {m['mention_id']: m['evidence'] for m in ref['mentions']}
+        grounded = [(e['idea_id'], c['turn_id'], c['exact_quote']) for e in ref['idea_mentions']
+                    for c in mentions[e['mention_id']]]
+        evidence_keys.update((view, i) for i in labels)
+        for ident, label in labels.items():
+            review[view, ident] = dict(label=label, evidence=[dict(turn_id=t, quote=q)
+                                                              for i, t, q in grounded if i == ident])
+        prior = ''
+        prior_role = None
+        for turn in packet['turns']:
+            if turn['role'] == 'target' and has_spoken_evidence(turn['text']):
+                previous = None
+                for sent in parser(turn['text']).sents:
+                    quote = sent.text.strip()
+                    if not has_spoken_evidence(quote):
+                        continue
+                    targets = {i: labels[i] for i, t, q in grounded if t == turn['turn_id'] and
+                               (q in quote or quote in q)}
+                    key = view, turn['turn_id'], sent.start_char
+                    candidates = [(kind, label, targets) for kind, label in proposals(sent, parser, expand=expand)]
+                    if questions and previous is None and prior_role == 'context':
+                        candidates.extend(('question_subject', label, targets) for label in question_subjects(prior, parser)
+                                          if label.casefold() not in {text.casefold() for _, text, _ in candidates})
+                    if resolved_questions and previous is None and prior_role == 'context':
+                        label = resolve_question_subject(quote, {'role': prior_role, 'text': prior}, parser)
+                        if label and label.casefold() not in {text.casefold() for _, text, _ in candidates}:
+                            candidates.append(('resolved_question', label, targets))
+                    if windows and previous is not None:
+                        combined = turn['text'][previous.start_char:sent.end_char].strip()
+                        if len(combined.split()) <= 60:
+                            window_targets = {i: labels[i] for i, t, q in grounded if t == turn['turn_id']
+                                              and (q in combined or combined in q)}
+                            candidates.append(('window', combined, window_targets))
+                    if antecedents and not windows and (context_span := local_antecedent(sent, previous)):
+                        context_targets = {i: labels[i] for i, t, q in grounded if t == turn['turn_id']
+                                           and (q in context_span or context_span in q)}
+                        candidates.append(('antecedent', context_span, context_targets))
+                    for kind, label, candidate_targets in candidates:
+                        evidence_start = previous.start_char if kind in {'window', 'antecedent'} else sent.start_char
+                        rows.append(dict(key=key, evidence_start=evidence_start, evidence_end=sent.end_char,
+                                         event=packet['event_id'], kind=kind, label=label,
+                                         quote=quote, evidence=turn['text'][evidence_start:sent.end_char],
+                                         context=f'{quote}\nPrevious turn: {prior[-500:]}',
+                                         proxy={i: lexical(label, target) for i, target in candidate_targets.items()}))
+                    previous = sent
+            prior = turn['text']
+            prior_role = turn['role']
+    started = time.perf_counter()
+    dense = embeddings(checkpoint, [(r['context'], r['label']) for r in rows]) if checkpoint else None
+    encoder_seconds = time.perf_counter() - started if checkpoint else None
+    features_by_row = [features(r['kind'], r['label'], r['quote']) for r in rows]
+    specificity = {label: specificity_features(label, parser) for label in dict.fromkeys(r['label'] for r in rows)}
+    enriched = [{**base, **specificity[row['label']]} for base, row in zip(features_by_row, rows)]
+    y = np.array([max(r['proxy'].values(), default=0.) for r in rows])
+    totals = Counter()
+    rank_seconds = Counter()
+    covered = {}
+    selected = []
+    inventories = {}
+
+    def record(method, indices):
+        for index in indices:
+            r = rows[index]
+            totals[method] += 1
+            covered.setdefault(method, set()).update((r['key'][0], i) for i, value in r['proxy'].items() if value >= .5)
+            if method not in {'pool', 'noun_pool'}:
+                selected.append(dict(method=method, view_id=r['key'][0], turn_id=r['key'][1],
+                                     start=r['evidence_start'], end=r['evidence_end'], label=r['label'], kind=r['kind']))
+
+    record('pool', range(len(rows)))
+    record('noun_pool', [i for i, r in enumerate(rows) if r['kind'] == 'noun'])
+    for train, test in GroupKFold(5).split(rows, groups=[r['event'] for r in rows]):
+        vectorizer = DictVectorizer()
+        x_train = vectorizer.fit_transform([features_by_row[i] for i in train])
+        x_test = vectorizer.transform([features_by_row[i] for i in test])
+        richer_vectorizer = DictVectorizer()
+        matrices = {'sparse': (x_train, x_test),
+                    'specificity': (richer_vectorizer.fit_transform([enriched[i] for i in train]),
+                                    richer_vectorizer.transform([enriched[i] for i in test]))}
+        if dense is not None:
+            vectors = np.asarray(dense)
+            matrices['contextual'] = (hstack([x_train, vectors[train]]).tocsr(),
+                                      hstack([x_test, vectors[test]]).tocsr())
+        predictions = {}
+        for name, (a, b) in matrices.items():
+            model = Ridge(alpha=10).fit(a, y[train])
+            start = time.perf_counter()
+            predictions[name] = model.predict(b)
+            rank_seconds[name] += time.perf_counter() - start
+        predictions['syntax_first'] = [dict(relation=3, frame=2, noun=1, passage=0, clause=-1, chunk=-2, window=-3, question_subject=-4, resolved_question=4, antecedent=-3)[rows[i]['kind']] for i in test]
+        for method, scores in predictions.items():
+            ordered = sorted(zip(test, scores), key=lambda x: (rows[x[0]]['key'], -x[1], x[0]))
+            groups = [[i for i, _ in group] for _, group in groupby(ordered, key=lambda x: rows[x[0]]['key'])]
+            first_choices = [group[0] for group in groups]
+            record(method, first_choices)
+            for members in transcript_groups(rows, first_choices):
+                best = rows[members[0]]
+                view = best['key'][0]
+                evidence = sorted({(rows[i]['key'][1], rows[i]['evidence_start'],
+                                    rows[i]['evidence_end'], rows[i]['evidence']) for i in members})
+                inventories.setdefault(method, {}).setdefault(view, []).append(dict(
+                    label=best['label'], evidence=[dict(turn_id=t, start=a, end=b, quote=q)
+                                                   for t, a, b, q in evidence]))
+            if expand:
+                budgeted = []
+                for group in groups:
+                    first = group[0]
+                    budgeted.append(first)
+                    second = next((i for i in group[1:] if lexical(rows[i]['label'], rows[first]['label']) < .8), None)
+                    if second is not None:
+                        budgeted.append(second)
+                record(f'{method}_diverse_top2', budgeted)
+    # Build a review queue after predictions. Include zero-overlap paraphrases
+    # when they occur near a reference anchor; never count them automatically.
+    by_turn = {}
+    for index, row in enumerate(rows):
+        by_turn.setdefault(row['key'][:2], []).append(index)
+    selected_keys = {(s['view_id'], s['turn_id'], s['start'], s['end'], s['label'])
+                     for s in selected if s['method'] == 'sparse'}
+    for (view, ident), item in review.items():
+        indices = {i for turn in {e['turn_id'] for e in item['evidence']}
+                   for i in by_turn.get((view, turn), [])}
+        ordered = sorted(indices, key=lambda i: (ident not in rows[i]['proxy'],
+                                                  -rows[i]['proxy'].get(ident, 0), i))
+        item['same_turn_proposals'] = len(ordered)
+        item['candidates'] = []
+        for i in ordered[:8]:
+            row = rows[i]
+            turn = row['key'][1]
+            start, end = row['evidence_start'], row['evidence_end']
+            item['candidates'].append(dict(turn_id=turn, start=start, end=end, label=row['label'],
+                                           kind=row['kind'], evidence=row['evidence'],
+                                           sparse_selected=(view, turn, start, end, row['label']) in selected_keys))
+    pool_hits = covered.get('pool', set())
+    sparse_hits = covered.get('sparse', set())
+    return dict(reference_manifest_sha256=digest(raw), folds=5, reference_ideas=len(evidence_keys),
+                sparse_gap=dict(no_pool_proxy_hit=len(evidence_keys - pool_hits),
+                                pool_hit_not_selected=len(pool_hits - sparse_hits),
+                                selected_proxy_hit=len(sparse_hits)),
+                expanded=expand, windows=windows, questions=questions, resolved_questions=resolved_questions, antecedents=antecedents, encoder_seconds=encoder_seconds, ranking_predict_seconds=dict(rank_seconds),
+                idea_diagnostics=[dict(view_id=view, reference_id=idea,
+                                       proxy_hits=[name for name in totals if (view, idea) in covered.get(name, ())],
+                                       **review[view, idea])
+                                  for view, idea in sorted(evidence_keys)],
+                checkpoint=checkpoint.name if checkpoint else None,
+                methods={method: dict(emitted=count, reference_ideas_with_lexical_proxy_hit=len(covered.get(method, ())))
+                         for method, count in totals.items()},
+                inventory_sizes={method: sum(map(len, views.values())) for method, views in inventories.items()},
+                inventories=inventories, selections=selected)
+
+
+def main():
+    cli = argparse.ArgumentParser(description=__doc__)
+    cli.add_argument('--reference-run', type=Path, required=True)
+    cli.add_argument('--output', type=Path, required=True)
+    cli.add_argument('--checkpoint', type=Path)
+    cli.add_argument('--expand', action='store_true')
+    cli.add_argument('--windows', action='store_true')
+    cli.add_argument('--questions', action='store_true')
+    cli.add_argument('--resolved-questions', action='store_true')
+    cli.add_argument('--antecedents', action='store_true')
+    args = cli.parse_args()
+    if args.antecedents and args.windows:
+        cli.error('compare --antecedents and --windows in separate runs')
+    import spacy
+    report = evaluate(args.reference_run, spacy.load('en_core_web_sm', disable=['ner']), args.checkpoint, expand=args.expand, windows=args.windows, questions=args.questions,
+                      resolved_questions=args.resolved_questions, antecedents=args.antecedents)
+    write_json(args.output, report)
+    print(json.dumps({k: v for k, v in report.items() if k not in {'selections', 'idea_diagnostics', 'inventories'}}, indent=2))
+
+
+if __name__ == '__main__':
+    main()
